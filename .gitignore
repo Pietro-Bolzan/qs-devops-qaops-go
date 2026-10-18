@@ -1,0 +1,22 @@
+# Binários gerados
+/bin/
+*.exe
+*.test
+
+# Relatórios gerados localmente ou pelo pipeline
+/reports/
+coverage.out
+coverage.html
+
+# Arquivos de IDE e sistema operacional
+.DS_Store
+.idea/
+.vscode/
+
+# Segredos e configuração local: NUNCA versionar.
+# Segredos do pipeline ficam nos "Secrets" da plataforma de CI.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
