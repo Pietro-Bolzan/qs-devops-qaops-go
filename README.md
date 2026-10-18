@@ -68,6 +68,21 @@ curl "localhost:8080/tasks?status=in_progress"
 | `make vet`   | Executa o `go vet`                               |
 | `make fmt`   | Formata o código                                 |
 | `make clean` | Remove binários e relatórios                     |
+| `make test-report` | Executa os testes como no CI e gera relatórios em `reports/` |
+| `make ci`    | Reproduz localmente os gates do pipeline         |
+
+## Pipeline de CI
+
+O workflow [`.github/workflows/ci.yml`](.github/workflows/ci.yml) roda no GitHub Actions a cada
+`push` na `main` e a cada pull request. Cada etapa funciona como um **quality gate**: se falhar,
+o pipeline fica vermelho e o PR não pode ser integrado.
+
+| Gate | Job                 | Critério de aprovação                            |
+|------|---------------------|--------------------------------------------------|
+| 1    | Gate 1 · Build      | Dependências verificadas, compila e `go vet` sem erros |
+| 2    | Gate 2 · Testes     | 100% dos testes unitários e de API passando, com `-race` |
+
+As fichas completas de cada gate estão em [docs/quality-gates.md](docs/quality-gates.md).
 
 ## Estrutura
 
@@ -75,7 +90,8 @@ curl "localhost:8080/tasks?status=in_progress"
 cmd/server/        ponto de entrada: monta dependências e sobe o servidor
 internal/task/     domínio: entidade, validações, ciclo de status, serviço e repositório
 internal/httpapi/  camada HTTP: rotas, JSON e mapeamento de erros
-docs/              caracterização do sistema, riscos e relatórios
+docs/              caracterização do sistema, quality gates e relatórios
+.github/workflows/ pipeline de CI
 ```
 
 ## Segurança
