@@ -30,13 +30,41 @@ curl http://localhost:8080/health
 # {"status":"ok"}
 ```
 
+## API
+
+Todas as requisições e respostas usam JSON. O prazo (`due_date`) usa o formato `AAAA-MM-DD`.
+
+| Método   | Rota                  | Descrição                               | Sucesso | Erros            |
+|----------|-----------------------|-----------------------------------------|---------|------------------|
+| `GET`    | `/health`             | Verifica se a API está no ar            | 200     | -                |
+| `GET`    | `/tasks?status=todo`  | Lista tarefas (filtro opcional)         | 200     | 422              |
+| `POST`   | `/tasks`              | Cria tarefa                             | 201     | 400, 422         |
+| `GET`    | `/tasks/{id}`         | Busca tarefa                            | 200     | 400, 404         |
+| `PUT`    | `/tasks/{id}`         | Edita título, descrição, prioridade e prazo | 200 | 400, 404, 409, 422 |
+| `PATCH`  | `/tasks/{id}/status`  | Muda o status                           | 200     | 400, 404, 409, 422 |
+| `DELETE` | `/tasks/{id}`         | Remove tarefa                           | 204     | 400, 404         |
+
+Significado dos erros: **400** JSON malformado ou id inválido; **404** tarefa inexistente;
+**409** violação do ciclo de vida (transição proibida ou edição de tarefa concluída);
+**422** regra de validação violada (o campo vem em `field`).
+
+Exemplo:
+
+```bash
+curl -X POST localhost:8080/tasks \
+  -d '{"title":"Configurar pipeline","priority":"high","due_date":"2026-12-01"}'
+
+curl -X PATCH localhost:8080/tasks/1/status -d '{"status":"in_progress"}'
+curl "localhost:8080/tasks?status=in_progress"
+```
+
 ## Comandos
 
 | Comando      | O que faz                                        |
 |--------------|--------------------------------------------------|
 | `make build` | Compila o binário em `bin/tarefas`               |
 | `make run`   | Executa a API localmente                         |
-| `make test`  | Executa os testes com detector de corrida        |
+| `make test`  | Executa testes unitários e de API (com `-race`)  |
 | `make vet`   | Executa o `go vet`                               |
 | `make fmt`   | Formata o código                                 |
 | `make clean` | Remove binários e relatórios                     |
@@ -44,8 +72,10 @@ curl http://localhost:8080/health
 ## Estrutura
 
 ```text
-cmd/server/      ponto de entrada da API
-docs/            caracterização do sistema, riscos e relatórios
+cmd/server/        ponto de entrada: monta dependências e sobe o servidor
+internal/task/     domínio: entidade, validações, ciclo de status, serviço e repositório
+internal/httpapi/  camada HTTP: rotas, JSON e mapeamento de erros
+docs/              caracterização do sistema, riscos e relatórios
 ```
 
 ## Segurança
