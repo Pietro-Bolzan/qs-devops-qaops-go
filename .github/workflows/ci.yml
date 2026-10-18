@@ -1,0 +1,117 @@
+# Pipeline de integração contínua com quality gates.
+# Cada job é um gate: se falhar, o pipeline fica vermelho e o PR não pode
+# ser integrado (ver "Proteção da branch main" em docs/quality-gates.md).
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Privilégio mínimo: o pipeline só precisa ler o código.
+permissions:
+  contents: read
+
+# Um novo push no mesmo PR cancela a execução anterior.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GOTESTSUM_VERSION: v1.13.0
+
+jobs:
+  build:
+    name: "Gate 1 · Build"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@v7
+
+      - name: Instalar Go (versão do go.mod)
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          check-latest: true
+          cache-dependency-path: go.mod
+
+      - name: Baixar e verificar dependências
+        run: |
+          go mod download
+          go mod verify
+
+      - name: Verificar se go.mod está organizado
+        run: |
+          go mod tidy
+          git diff --exit-code -- go.mod
+
+      - name: Compilar
+        run: go build -v ./...
+
+      - name: Análise básica do compilador (go vet)
+        run: go vet ./...
+
+      - name: Gerar binário
+        run: go build -o bin/tarefas ./cmd/server
+
+      - name: Publicar binário
+        uses: actions/upload-artifact@v7
+        with:
+          name: tarefas-linux-amd64
+          path: bin/tarefas
+          retention-days: 7
+
+  test:
+    name: "Gate 2 · Testes"
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@v7
+
+      - name: Instalar Go (versão do go.mod)
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          check-latest: true
+          cache-dependency-path: go.mod
+
+      - name: Instalar gotestsum
+        run: go install gotest.tools/gotestsum@${{ env.GOTESTSUM_VERSION }}
+
+      - name: Executar testes unitários e de API (com detector de corrida)
+        run: |
+          mkdir -p reports
+          gotestsum --format testname \
+            --junitfile reports/junit.xml \
+            --jsonfile reports/test-output.json \
+            -- -race -count=1 -covermode=atomic -coverprofile=reports/coverage.out ./...
+
+      - name: Resumo dos testes
+        if: always()
+        shell: bash
+        run: |
+          if [ ! -f reports/junit.xml ]; then
+            echo "Relatório JUnit não foi gerado." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          header=$(grep -m1 -o '<testsuites[^>]*>' reports/junit.xml)
+          attr() { echo "$header" | sed -nE "s/.* $1=\"([^\"]*)\".*/\1/p"; }
+          {
+            echo "## Gate 2 · Testes"
+            echo "| Total | Falhas | Erros | Tempo (s) |"
+            echo "|------:|-------:|------:|----------:|"
+            echo "| $(attr tests) | $(attr failures) | $(attr errors) | $(attr time) |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publicar relatórios de teste
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: relatorio-testes
+          path: reports/
+          retention-days: 30
