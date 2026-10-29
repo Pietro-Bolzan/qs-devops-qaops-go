@@ -1,0 +1,40 @@
+# Configuração do Gate 3 · Análise estática (golangci-lint v2).
+# Cada linter habilitado está ligado a um risco; ver docs/quality-gates.md.
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  # "standard" = errcheck, govet, ineffassign, staticcheck e unused.
+  default: standard
+  enable:
+    - bodyclose # corpo de resposta HTTP não fechado (vazamento de conexão)
+    - errorlint # comparação de erros sem errors.Is/As (quebra com wrap)
+    - gosec # padrões inseguros (servidor sem timeout, permissões, etc.)
+    - nilerr # devolver nil quando havia um erro
+    - revive # convenções de Go (nomes, comentários de exportados)
+    - gocyclo # funções complexas demais para manter e testar
+    - unconvert # conversões de tipo desnecessárias
+  # misspell foi avaliado e descartado: só conhece inglês e acusava falsos
+  # positivos nos comentários em português (ex.: "Comando" → "Commando").
+  settings:
+    gocyclo:
+      # Funções acima de 15 caminhos ficam difíceis de testar por completo.
+      min-complexity: 15
+    errcheck:
+      check-type-assertions: true
+  exclusions:
+    presets:
+      - std-error-handling
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+
+issues:
+  # Mostra todos os problemas, sem limite por linter.
+  max-issues-per-linter: 0
+  max-same-issues: 0
