@@ -13,11 +13,12 @@ push / pull request na main  (+ agenda semanal)
                   ├─► Gate 3 · Análise estática ──────────────┤
                   ├─► Gate 5 · Dependências ──────────────────┼─► Quality Gate (decisão)
                   └─► Gate 7 · Teste de fumaça ───────────────┤
-  Gate 6 · Segredos (não depende do build) ───────────────────┘
+  Gate 6 · Segredos (não depende do build) ───────────────────┤
+  Gate 8 · Frontend (não depende do build) ───────────────────┘
 ```
 
-Os gates 2, 3, 5 e 7 rodam em paralelo depois do build, e o Gate 6 começa junto com o build, para o
-feedback chegar mais rápido. O job **Quality Gate**
+Os gates 2, 3, 5 e 7 rodam em paralelo depois do build. Os gates 6 e 8 não precisam do binário Go e
+começam junto com o build, para o feedback chegar mais rápido. O job **Quality Gate**
 roda sempre, mesmo quando algum gate falha. Ele monta no resumo da execução uma tabela com o
 resultado de cada gate e só é aprovado se **todos** forem aprovados.
 
@@ -105,11 +106,32 @@ cabeçalhos.
 | **Consequência**      | **Bloqueia.** |
 | **Limitação/exceção** | Não mede desempenho nem carga e roda em um único sistema operacional (Linux). Os dados ficam em memória, então não verifica persistência. Uma verificação nova deve entrar só se proteger o caminho principal; o restante pertence aos testes de API do Gate 2. |
 
+## Gate 8 · Frontend
+
+| Campo                 | Registro |
+|-----------------------|----------|
+| **Nome e critério**   | Frontend (`web/`). Aprova se, em sequência: `npm ci` instala exatamente o `package-lock.json`; `npm audit` não encontra vulnerabilidade **alta ou crítica**; o `oxlint` (com o plugin `jsx-a11y`) reporta **zero problemas**; o TypeScript compila sem erro; **100% dos testes** passam, incluindo os de acessibilidade com **axe-core sem nenhuma violação WCAG 2.1 A/AA**; a cobertura de `web/src` fica em **≥ 80%** de linhas, comandos, ramos e funções; e o build de produção é gerado. |
+| **Justificativa**     | Risco R11. O front repete, em pequeno, os gates do back-end: testes (Gate 2), análise estática (Gate 3), cobertura (Gate 4) e dependências (Gate 5). O limite de cobertura é o mesmo do total do back-end, porque é uma camada de interface, com ramos de pouco valor para testar (animações, carregamento). A acessibilidade vira critério objetivo, e não opinião: o axe-core aplica as regras WCAG e o teste falha se houver violação. O `npm audit` usa o nível "alto" porque o "moderado" gera muitos alertas de ferramentas de desenvolvimento que não chegam ao navegador. |
+| **Momento**           | Em todo `push`/`pull_request` e na agenda semanal. Não depende do Gate 1: começa logo no início. |
+| **Evidência**         | Tabela "Gate 8 · Frontend" no resumo da execução (testes e cobertura), log de cada passo, artefato `relatorio-frontend` (`junit.xml` e cobertura em HTML) e artefato `esteira-web` com o build. |
+| **Consequência**      | **Bloqueia.** |
+| **Limitação/exceção** | Os testes rodam no jsdom, sem navegador real: contraste de cores, layout responsivo e animações não são medidos no pipeline. Por isso, nos testes a interface roda com "reduzir movimento" ativado. O contraste foi verificado com o axe-core no Chromium, nos dois temas, no computador e no celular. Não há teste de ponta a ponta com a API real: o front é testado com uma API falsa que imita a RN01, a RN06 e a RN07. Uma regra de lint pode ser desligada em `.oxlintrc.json` com justificativa no PR (caso de `react-in-jsx-scope`, que não se aplica ao JSX moderno). |
+
+**Achados durante o desenvolvimento:**
+
+- O `oxlint` apontou 4 problemas reais: `set-state-in-effect` (estado atualizado de forma síncrona
+  dentro de um efeito, o que causa renderizações em cascata) e três `prefer-tag-over-role`
+  (`role="status"`, `role="group"` e `role="progressbar"` em `div`, quando existem elementos HTML
+  com essa semântica: `<output>`, `<fieldset>` e `<progress>`). Todos foram corrigidos.
+- O axe-core no Chromium encontrou contraste de **3,83:1** na dica do formulário no modo escuro
+  (o mínimo é 4,5:1). A cor foi ajustada. É um exemplo do que o jsdom não pega, porque ele não
+  calcula estilos.
+
 ## Quality Gate (decisão final)
 
 | Campo                 | Registro |
 |-----------------------|----------|
-| **Nome e critério**   | Aprova somente se os 7 gates terminaram com `success`. Um gate `failure`, `cancelled` ou `skipped` (que não rodou porque o anterior falhou) reprova. |
+| **Nome e critério**   | Aprova somente se os 8 gates terminaram com `success`. Um gate `failure`, `cancelled` ou `skipped` (que não rodou porque o anterior falhou) reprova. |
 | **Justificativa**     | A proteção da branch exige o nome de cada check. Com um único check consolidado, adicionar um gate novo não exige mudar a configuração do GitHub, e o resultado fica resumido em uma tabela. |
 | **Momento**           | Último job, sempre executado (`if: always()`). |
 | **Evidência**         | Tabela "Decisão do Quality Gate" no resumo da execução. |
@@ -132,7 +154,7 @@ O bloqueio do merge é configurado no GitHub (não fica em arquivo do repositór
      **Require branches to be up to date before merging**.
 5. **Create**.
 
-Com isso, nenhum código chega à `main` sem passar pelos 7 gates, nem mesmo o dos integrantes.
+Com isso, nenhum código chega à `main` sem passar pelos 8 gates, nem mesmo o dos integrantes.
 
 ## Como reproduzir localmente
 
