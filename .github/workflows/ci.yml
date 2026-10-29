@@ -21,6 +21,7 @@ concurrency:
 
 env:
   GOTESTSUM_VERSION: v1.13.0
+  GOLANGCI_LINT_VERSION: v2.15.0
 
 jobs:
   build:
@@ -115,3 +116,39 @@ jobs:
           name: relatorio-testes
           path: reports/
           retention-days: 30
+
+  lint:
+    name: "Gate 3 · Análise estática"
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@v7
+
+      - name: Instalar Go (versão do go.mod)
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          check-latest: true
+          cache-dependency-path: go.mod
+
+      - name: Preparar pasta de relatórios
+        run: mkdir -p reports
+
+      # As regras ficam em .golangci.yml. Os problemas aparecem no log e
+      # também como anotações nas linhas do PR.
+      - name: Executar golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: ${{ env.GOLANGCI_LINT_VERSION }}
+          args: --output.text.path=stdout --output.junit-xml.path=reports/golangci-lint.xml
+
+      - name: Publicar relatório de análise estática
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: relatorio-lint
+          path: reports/golangci-lint.xml
+          retention-days: 30
+          if-no-files-found: ignore

@@ -47,8 +47,16 @@ func newServer(t *testing.T, repo task.Repository) *httptest.Server {
 	return srv
 }
 
+// result guarda o que os testes verificam de uma resposta. O corpo já é
+// lido e fechado dentro de call, então nenhum teste precisa fechá-lo.
+type result struct {
+	method, path string
+	status       int
+	header       http.Header
+}
+
 // call faz a requisição e decodifica o JSON da resposta em out (se não for nil).
-func call(t *testing.T, srv *httptest.Server, method, path, body string, out any) *http.Response {
+func call(t *testing.T, srv *httptest.Server, method, path, body string, out any) result {
 	t.Helper()
 	req, err := http.NewRequestWithContext(t.Context(), method, srv.URL+path, strings.NewReader(body))
 	if err != nil {
@@ -73,13 +81,13 @@ func call(t *testing.T, srv *httptest.Server, method, path, body string, out any
 			t.Fatalf("resposta não é JSON válido (%s): %q", err, raw)
 		}
 	}
-	return resp
+	return result{method: method, path: path, status: resp.StatusCode, header: resp.Header}
 }
 
-func assertStatus(t *testing.T, resp *http.Response, want int) {
+func assertStatus(t *testing.T, res result, want int) {
 	t.Helper()
-	if resp.StatusCode != want {
-		t.Fatalf("%s %s: status = %d, esperado %d", resp.Request.Method, resp.Request.URL.Path, resp.StatusCode, want)
+	if res.status != want {
+		t.Fatalf("%s %s: status = %d, esperado %d", res.method, res.path, res.status, want)
 	}
 }
 
@@ -99,7 +107,7 @@ func TestHealth(t *testing.T) {
 	if body["status"] != "ok" {
 		t.Errorf("body = %v", body)
 	}
-	if ct := resp.Header.Get("Content-Type"); ct != "application/json" {
+	if ct := resp.header.Get("Content-Type"); ct != "application/json" {
 		t.Errorf("Content-Type = %q", ct)
 	}
 }
@@ -112,7 +120,7 @@ func TestCreateTask(t *testing.T) {
 		`{"title":"Configurar pipeline","priority":"high","due_date":"2026-10-30"}`, &created)
 
 	assertStatus(t, resp, http.StatusCreated)
-	if loc := resp.Header.Get("Location"); loc != "/tasks/1" {
+	if loc := resp.header.Get("Location"); loc != "/tasks/1" {
 		t.Errorf("Location = %q, esperado /tasks/1", loc)
 	}
 	want := apiTask{ID: 1, Title: "Configurar pipeline", Priority: "high", Status: "todo", DueDate: "2026-10-30"}
@@ -320,7 +328,7 @@ func TestInternalErrorIsNotLeaked(t *testing.T) {
 func TestResponseIsValidJSON(t *testing.T) {
 	srv := newServer(t, nil)
 	resp := call(t, srv, http.MethodGet, "/tasks/abc", "", nil)
-	if ct := resp.Header.Get("Content-Type"); ct != "application/json" {
+	if ct := resp.header.Get("Content-Type"); ct != "application/json" {
 		t.Errorf("Content-Type de erro = %q", ct)
 	}
 }

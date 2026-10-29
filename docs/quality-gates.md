@@ -9,7 +9,8 @@ Um gate reprovado deixa o pipeline vermelho e, com a proteção da branch `main`
 push / pull request na main
         │
         ▼
-  Gate 1 · Build ──► Gate 2 · Testes
+  Gate 1 · Build ─┬─► Gate 2 · Testes
+                  └─► Gate 3 · Análise estática
 ```
 
 ---
@@ -35,6 +36,22 @@ push / pull request na main
 | **Evidência**         | Log com o nome de cada teste (`gotestsum --format testname`), tabela no resumo da execução (total, falhas, tempo) e o artefato `relatorio-testes` com `junit.xml`, `test-output.json` e `coverage.out` (guardado por 30 dias, mesmo quando o gate falha). |
 | **Consequência**      | **Bloqueia.** |
 | **Limitação/exceção** | Os testes só verificam os cenários escritos. Um comportamento sem teste não é protegido (o Gate de cobertura, adicionado depois, mede essa lacuna). Não testam desempenho nem carga. Um teste instável (*flaky*) deve ser corrigido, nunca ignorado ou marcado com `t.Skip` para passar no pipeline. |
+
+## Gate 3 · Análise estática
+
+| Campo                 | Registro |
+|-----------------------|----------|
+| **Nome e critério**   | Análise estática. Aprova se o `golangci-lint` (v2.15.0, regras em [`.golangci.yml`](../.golangci.yml)) reporta **zero problemas**. A formatação (`gofmt`/`goimports`) também é verificada. |
+| **Justificativa**     | Risco R6: defeitos que compilam e podem passar nos testes, mas causam falhas silenciosas ou inseguras. Cada linter cobre um risco: `errcheck` (erro ignorado), `bodyclose` (conexão HTTP vazando), `gosec` (padrões inseguros, como servidor sem timeout), `errorlint` (comparação de erro que quebra com *wrap*), `staticcheck`/`unused`/`ineffassign` (código morto e bugs conhecidos), `gocyclo` (função com mais de 15 caminhos, difícil de testar). O critério é zero porque o projeto é pequeno e começou limpo: tolerar alguns problemas faria a dívida crescer sem ninguém perceber. |
+| **Momento**           | Em paralelo ao Gate 2, depois do Gate 1, em todo `push`/`pull_request`. |
+| **Evidência**         | Log do job, anotações nas linhas do código no PR e o artefato `relatorio-lint` (`golangci-lint.xml` no formato JUnit). |
+| **Consequência**      | **Bloqueia.** |
+| **Limitação/exceção** | Só encontra padrões conhecidos; não entende a regra de negócio. O `misspell` foi testado e descartado porque só conhece inglês e acusava falsos positivos nos comentários em português. Uma exceção pontual pode ser feita com `//nolint:<linter> // motivo`, sempre com justificativa no código e revisada no PR. |
+
+**Achado ao ativar o gate:** a primeira execução apontou 35 problemas do `bodyclose` nos testes de
+API. O helper `call` fechava o corpo, mas devolvia o `*http.Response`, o que deixava a garantia
+invisível para o leitor e para a ferramenta. O helper foi refatorado para devolver só status e
+cabeçalhos.
 
 ## Como reproduzir localmente
 
