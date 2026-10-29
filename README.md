@@ -1,10 +1,20 @@
 # API de Tarefas: pipeline DevOps/QAOps
 
+[![CI](https://github.com/Pietro-Bolzan/qs-devops-qaops-go/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Pietro-Bolzan/qs-devops-qaops-go/actions/workflows/ci.yml)
+
 API REST pequena, escrita em Go, para gerenciar tarefas (criar, listar, editar, mudar status e excluir).
 O sistema é simples de propósito: o foco do trabalho é a **qualidade integrada ao fluxo de entrega**
 (pipeline, testes automatizados e quality gates), não a complexidade da aplicação.
 
-A caracterização do sistema e os riscos de qualidade estão em [docs/sistema.md](docs/sistema.md).
+## Documentação
+
+| Documento                                        | Conteúdo                                              |
+|--------------------------------------------------|-------------------------------------------------------|
+| [docs/sistema.md](docs/sistema.md)               | Finalidade, arquitetura, regras de negócio e riscos   |
+| [docs/quality-gates.md](docs/quality-gates.md)   | Ficha de cada quality gate e proteção da branch       |
+| [docs/experimentos.md](docs/experimentos.md)     | Cenários aprovado, reprovado e corrigido              |
+| [docs/relatorio.md](docs/relatorio.md)           | Relatório técnico                                     |
+| [docs/roteiro-demo.md](docs/roteiro-demo.md)     | Roteiro da demonstração                               |
 
 ## Requisitos
 
@@ -70,9 +80,9 @@ curl "localhost:8080/tasks?status=in_progress"
 | `make lint`  | Executa a análise estática (golangci-lint)       |
 | `make vuln`  | Procura vulnerabilidades conhecidas (govulncheck) |
 | `make fmt`   | Formata o código                                 |
-| `make clean` | Remove binários e relatórios                     |
 | `make test-report` | Executa os testes como no CI e gera relatórios em `reports/` |
-| `make ci`    | Reproduz localmente os gates do pipeline         |
+| `make ci`    | Reproduz localmente todos os gates do pipeline   |
+| `make clean` | Remove binários e relatórios                     |
 
 ## Pipeline de CI
 
@@ -114,5 +124,7 @@ estão no `.gitignore`. Se o pipeline precisar de algum segredo, ele deve ser ca
 
 ## Integrantes
 
-- Integrante 1: _nome_
-- Integrante 2: _nome_
+| Integrante        | Responsável por                                                       |
+|-------------------|-----------------------------------------------------------------------|
+| Pietro Bolzan        | Base do repositório, domínio, serviço, API, testes, pipeline (Gates 1 e 2) |
+| Eduardo dos Santos Lourenço | Análise estática, cobertura, dependências, Quality Gate, experimentos, relatório |
