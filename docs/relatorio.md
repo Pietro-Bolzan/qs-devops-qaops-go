@@ -1,17 +1,14 @@
 # Relatório técnico: Pipeline de qualidade, automação e evidências
 
-> **Rascunho.** Os trechos marcados com `_(preencher)_` dependem das execuções reais no GitHub
-> Actions ou de dados da dupla. Para entregar, exportar para PDF/Word (6 a 10 páginas, sem anexos).
-
 ## 1. Identificação
 
 | Campo        | Registro                                              |
 |--------------|-------------------------------------------------------|
-| Integrantes  | _(preencher: Integrante 1)_ e _(preencher: Integrante 2)_ |
+| Integrantes  | Pietro Bolzan e Eduardo dos Santos Lourenço           |
 | Sistema      | API de Tarefas: API REST em Go para gerenciar tarefas |
-| Repositório  | _(preencher: URL do GitHub)_                          |
-| Plataforma   | GitHub Actions (`ubuntu-latest`)                      |
-| Data         | _(preencher)_                                         |
+| Repositório  | https://github.com/Pietro-Bolzan/qs-devops-qaops-go   |
+| Plataforma   | GitHub Actions (`ubuntu-latest`, Go 1.27)             |
+| Data         | 29/10/2026                                            |
 
 ## 2. Contexto
 
@@ -121,7 +118,8 @@ combinações de transição de status).
 | API / integração | `internal/httpapi/handler_test.go`           | 13 / 23         | Contrato HTTP de todos os endpoints (status, cabeçalhos, JSON), ciclo de vida completo, erro interno sem vazar detalhes |
 | **Total**        |                                              | **38 / 72**     | |
 
-\* Casos contando os subtestes de tabela. _(conferir com o resumo do Gate 2)_
+\* Casos contando os subtestes de tabela. O total de 72 casos é o que aparece no resumo do Gate 2 em
+todas as execuções do pipeline.
 
 **Destaques:**
 
@@ -176,9 +174,9 @@ request**, em commits consecutivos:
 
 | Cenário   | Alteração                                       | Resultado                                          | Execução |
 |-----------|-------------------------------------------------|----------------------------------------------------|----------|
-| Aprovado  | Documentação do experimento                     | 5 gates ✅, Quality Gate ✅                         | _(link)_ |
-| Reprovado | `done` passa a poder voltar para `todo` (viola RN07) | Gates 1, 3, 5 ✅; **Gate 2 ❌ (4 testes)**; Gate 4 não executou; **merge bloqueado** | _(link)_ |
-| Correção  | `git revert` do commit defeituoso               | 5 gates ✅, Quality Gate ✅                         | _(link)_ |
+| Aprovado  | Documentação do experimento (`ac131ef`)          | 5 gates ✅, Quality Gate ✅                         | [1min51s](https://github.com/Pietro-Bolzan/qs-devops-qaops-go/actions/runs/40879768649) |
+| Reprovado | `done` passa a poder voltar para `todo`, violando a RN07 (`7fc8c36`) | Gates 1, 3, 5 ✅; **Gate 2 ❌ (72 testes, 5 falhas em 4 funções)**; Gate 4 não executou; **merge bloqueado** | [1min09s](https://github.com/Pietro-Bolzan/qs-devops-qaops-go/actions/runs/40880227916) |
+| Correção  | `git revert` do commit defeituoso (`dd1394a`)    | 5 gates ✅, Quality Gate ✅                         | [1min37s](https://github.com/Pietro-Bolzan/qs-devops-qaops-go/actions/runs/40882005466) |
 
 **Análise.** A alteração defeituosa tinha uma única linha, compilava e passava no lint, ou seja,
 seria fácil aprová-la numa revisão apressada. O pipeline bloqueou o merge **na etapa correta** (o
@@ -186,11 +184,15 @@ problema era de comportamento, então reprovou o gate de testes) e a regressão 
 camadas: domínio (`TestCanTransition`, `TestTransitionTo_Rejected`), serviço
 (`TestService_ChangeStatus`) e API (`TestTaskLifecycle`, que esperava `409` e recebeu `200`). O log
 mostrou o nome de cada teste e o valor esperado contra o obtido, então a causa pôde ser identificada
-sem rodar nada localmente. Tempo da reprovação até a nova aprovação: _(preencher)_.
+sem rodar nada localmente. A reprovação foi a execução **mais rápida** (1min09s), porque o Gate 4
+nem rodou e o Quality Gate decidiu assim que o Gate 2 falhou. Entre o fim da execução reprovada
+(13:16 UTC) e a nova aprovação (13:28 UTC) passaram cerca de 12 minutos, a maior parte para ler o
+log e registrar as evidências. A correção em si (revert, push e pipeline) levou menos de 2 minutos.
 
-No experimento complementar, ignorar o erro de `Encode` **não** fez nenhum teste falhar, mas
-reprovou o Gate 3 (`errcheck`) com anotação na linha do PR. Isso mostra que os gates são
-complementares: cada um pega uma classe diferente de problema. _(manter se executado)_
+No experimento complementar (PR #10, não integrado), ignorar o erro de `Encode` **não** fez nenhum
+dos 72 testes falhar, mas reprovou o Gate 3 (`errcheck`), com a anotação na linha 225 do
+`handler.go`, dentro do PR. Isso mostra que os gates são complementares: no experimento principal só
+os testes pegaram o problema; neste, só a análise estática.
 
 ## 8. Análise crítica
 
@@ -201,8 +203,9 @@ poderia ser automatizado com uma ferramenta como `gitleaks` ou com o *secret sca
 não exercita banco, migrações nem transações; e **falhas de lógica não especificadas**, porque os
 testes verificam as regras que a dupla escreveu, não as que esqueceu.
 
-**O pipeline fornece feedback rápido e compreensível?** _(preencher com a duração real; espera-se
-de 1 a 3 minutos)_. A velocidade vem dos gates em paralelo, do cache do Go e de testes que não
+**O pipeline fornece feedback rápido e compreensível?** Sim. As execuções do experimento levaram de
+**1min09s a 1min51s** do push à decisão, e o job mais lento é o de testes (cerca de 45 s, por causa
+do `-race`). A velocidade vem dos gates em paralelo, do cache do Go e de testes que não
 dependem de rede nem de banco. A clareza vem da tabela de decisão no resumo, das anotações do lint
 na linha exata do PR e dos nomes de teste descritivos em português. Um ponto fraco é que o
 `gotestsum` precisa ser instalado a cada execução, o que adiciona alguns segundos.
@@ -216,6 +219,14 @@ sem correção disponível e o teste exploratório da API na demonstração.
 ferramentas fixadas precisam de atualização periódica (Go, linters, *actions*), e cada atualização
 pode trazer regras novas. O limite de cobertura pode incentivar testes vazios se não houver revisão.
 Em troca, a regressão do experimento, que seria um defeito em produção, custou alguns minutos de CI.
+
+Um caso real mostrou esse custo. Em 19/10/2026 o rótulo `ubuntu-latest` do GitHub passou a apontar
+para o Ubuntu 26, em que o `awk` é o **gawk**. No primeiro PR do gate de cobertura, o script
+reprovou sem nenhuma mudança no código: `awk: fatal: cannot use gawk builtin 'include' as variable
+name`, porque `include` é palavra reservada no gawk e o script usava uma variável com esse nome. A
+correção foi renomear duas variáveis (testadas com gawk e mawk). A lição: fixar a versão das
+ferramentas não basta se o **ambiente de execução** não estiver fixado também (`ubuntu-24.04` em
+vez de `ubuntu-latest`), e scripts de gate precisam ser portáveis.
 
 **O que diferencia automação isolada de uma prática DevOps/QAOps?** Ter scripts de teste é
 automação. Vira prática QAOps quando: (a) as verificações rodam **sempre**, no fluxo, sem depender
@@ -237,11 +248,12 @@ faltam métricas (latência, taxa de erro por rota, ex.: Prometheus), alertas e 
 
 | Integrante | Partes | Contribuição |
 |------------|--------|--------------|
-| _(Integrante 1)_ | 1 a 5 | Estrutura do repositório e caracterização do sistema; domínio e regras de negócio; repositório e serviço; API HTTP; testes unitários e de API; pipeline base com os Gates 1 e 2. |
-| _(Integrante 2)_ | 6 a 10 | Gate de análise estática (incluindo a correção dos achados); gate de cobertura; gate de dependências e decisão consolidada; proteção da branch; execução e registro dos experimentos; relatório e roteiro da demonstração. |
+| Pietro Bolzan | 1 a 5 | Estrutura do repositório e caracterização do sistema; domínio e regras de negócio; repositório e serviço; API HTTP; testes unitários e de API; pipeline base com os Gates 1 e 2. |
+| Eduardo dos Santos Lourenço | 6 a 10 | Gate de análise estática (incluindo a correção dos achados); gate de cobertura; gate de dependências e decisão consolidada; proteção da branch; execução e registro dos experimentos; relatório e roteiro da demonstração. |
 
 Os dois integrantes revisaram os PRs um do outro, e o histórico de commits do repositório registra
-a autoria de cada parte.
+a autoria de cada parte. Cada parte entrou por um pull request, integrado com *merge commit*, e as
+branches foram mantidas para que o progresso possa ser acompanhado.
 
 ## Referências
 
