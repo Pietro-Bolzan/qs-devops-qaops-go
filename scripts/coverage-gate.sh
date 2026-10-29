@@ -24,9 +24,9 @@ fi
 # Linhas do perfil: "arquivo.go:linha.col,linha.col <comandos> <execuções>".
 # Blocos repetidos (mesmo trecho em mais de um pacote) são contados uma vez.
 coverage() {
-  awk -v include="$1" -v exclude="$EXCLUDE_PATH" '
+  awk -v scope="$1" -v skip="$EXCLUDE_PATH" '
     NR == 1 { next }
-    index($1, include) == 0 || index($1, exclude) > 0 { next }
+    index($1, scope) == 0 || index($1, skip) > 0 { next }
     {
       stmts[$1] = $2
       if ($3 > 0) hit[$1] = 1
