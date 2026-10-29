@@ -15,12 +15,14 @@ escolhido para que o esforço do trabalho fique na automação da qualidade e n�
 | Persistência          | Repositório em memória          | Execução reproduzível sem banco; a interface permite trocar depois               |
 | Dependências          | Go Modules (`go.mod`)           | Arquivo declarativo e verificável (`go mod verify`)                              |
 | Testes                | `testing` + `net/http/httptest` | Testes unitários e de API sem subir servidor real                               |
+| Interface web         | React 19 + Vite 8 + TypeScript + Motion (`web/`) | Interface "Esteira"; depende da API só pelo contrato HTTP          |
+| Testes do front       | Vitest + Testing Library + axe-core | Testes de componente e de acessibilidade (WCAG) sem navegador                 |
 
 ## Arquitetura resumida
 
 ```text
-cliente HTTP
-    │
+web/ (Esteira, React)  ou  qualquer cliente HTTP
+    │   /api/... (o Vite encaminha para :8080)
     ▼
 cmd/server         → monta as dependências e sobe o servidor
 internal/httpapi   → traduz HTTP/JSON ⇄ casos de uso, mapeia erros para status HTTP
@@ -61,6 +63,7 @@ transição.
 | R8  | Uso de componente (biblioteca padrão ou módulo) com vulnerabilidade conhecida | Exposição a ataques                 | Gate de dependências                 |
 | R9  | Segredos versionados no repositório                                      | Vazamento de credenciais                  | Gate de segredos (gitleaks) + `.gitignore` |
 | R10 | O binário entregue não sobe ou não atende pela rede (configuração, porta, desligamento) | Sistema fora do ar após a entrega | Teste de fumaça do binário           |
+| R11 | Interface quebra o fluxo do usuário, fica inacessível ou usa pacote npm vulnerável | Usuário não consegue usar o sistema | Gate do frontend (testes, axe-core, lint, `npm audit`) |
 
 ## Execução local
 

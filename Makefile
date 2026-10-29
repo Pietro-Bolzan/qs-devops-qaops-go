@@ -4,7 +4,7 @@ GOLANGCI_LINT := go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v
 GOVULNCHECK := go run golang.org/x/vuln/cmd/govulncheck@v1.9.0
 
 .DEFAULT_GOAL := help
-.PHONY: help deps build run test test-report cover vet lint vuln secrets smoke fmt clean ci
+.PHONY: help deps build run test test-report cover vet lint vuln secrets smoke web web-check fmt clean ci
 
 help: ## Lista os alvos disponíveis
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-12s %s\n", $$1, $$2}'
@@ -47,10 +47,16 @@ secrets: ## Procura segredos no histórico do Git (gitleaks: brew install gitlea
 smoke: build ## Sobe o binário e executa o teste de fumaça
 	./scripts/smoke-test.sh $(BIN)
 
+web: ## Sobe a interface em http://localhost:5173 (com a API rodando: make run)
+	cd web && npm install && npm run dev
+
+web-check: ## Reproduz o Gate 8: auditoria, lint, tipos, testes e build do frontend
+	cd web && npm ci && npm audit --audit-level=high && npm run lint && npm run typecheck && npm run test:coverage && npx vite build
+
 fmt: ## Formata o código
 	gofmt -s -w .
 
 clean: ## Remove binários e relatórios gerados
 	rm -rf bin reports coverage.out coverage.html
 
-ci: deps vet build cover lint vuln secrets smoke ## Reproduz localmente os gates do pipeline
+ci: deps vet build cover lint vuln secrets smoke web-check ## Reproduz localmente os gates do pipeline

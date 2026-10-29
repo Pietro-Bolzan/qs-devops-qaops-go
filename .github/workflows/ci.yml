@@ -330,11 +330,70 @@ jobs:
           retention-days: 30
           if-no-files-found: ignore
 
+  frontend:
+    name: "Gate 8 · Frontend"
+    # Independente do back-end: começa junto com o Gate 1.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@v7
+
+      - name: Instalar Node.js (versão do web/.nvmrc)
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: web/.nvmrc
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      # npm ci instala exatamente o que está no package-lock.json e falha se
+      # o lock estiver desatualizado em relação ao package.json.
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Auditar dependências (npm audit, severidade alta ou crítica)
+        run: npm audit --audit-level=high
+
+      - name: Análise estática e acessibilidade (oxlint + jsx-a11y)
+        run: npm run lint
+
+      - name: Verificar tipos (TypeScript)
+        run: npm run typecheck
+
+      - name: Testes de componente, acessibilidade (axe-core) e cobertura
+        run: npm run test:coverage
+
+      - name: Resumo do frontend
+        if: always()
+        run: node scripts/ci-summary.mjs
+
+      - name: Gerar build de produção
+        run: npx vite build
+
+      - name: Publicar relatórios do frontend
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: relatorio-frontend
+          path: web/reports/
+          retention-days: 30
+          if-no-files-found: ignore
+
+      - name: Publicar build do frontend
+        uses: actions/upload-artifact@v7
+        with:
+          name: esteira-web
+          path: web/dist/
+          retention-days: 7
+
   # Decisão final: um único check obrigatório na proteção da branch main.
   # Roda sempre (mesmo com falhas antes) para registrar o resultado de cada gate.
   quality-gate:
     name: "Quality Gate"
-    needs: [build, test, lint, coverage, vulnerabilities, secrets, smoke]
+    needs: [build, test, lint, coverage, vulnerabilities, secrets, smoke, frontend]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -349,6 +408,7 @@ jobs:
           VULN: ${{ needs.vulnerabilities.result }}
           SECRETS: ${{ needs.secrets.result }}
           SMOKE: ${{ needs.smoke.result }}
+          FRONTEND: ${{ needs.frontend.result }}
         run: |
           icon() {
             case "$1" in
@@ -369,9 +429,10 @@ jobs:
             echo "| 5 · Dependências | $(icon "$VULN") |"
             echo "| 6 · Segredos | $(icon "$SECRETS") |"
             echo "| 7 · Teste de fumaça | $(icon "$SMOKE") |"
+            echo "| 8 · Frontend | $(icon "$FRONTEND") |"
           } >> "$GITHUB_STEP_SUMMARY"
 
-          for result in "$BUILD" "$TEST" "$LINT" "$COVERAGE" "$VULN" "$SECRETS" "$SMOKE"; do
+          for result in "$BUILD" "$TEST" "$LINT" "$COVERAGE" "$VULN" "$SECRETS" "$SMOKE" "$FRONTEND"; do
             if [ "$result" != "success" ]; then
               echo "::error::Quality gate REPROVADO: pelo menos um gate não foi aprovado (veja o resumo)."
               echo "**Decisão: ❌ BLOQUEADO**" >> "$GITHUB_STEP_SUMMARY"

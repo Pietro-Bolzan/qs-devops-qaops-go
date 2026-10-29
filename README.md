@@ -21,6 +21,7 @@ O sistema é simples de propósito: o foco do trabalho é a **qualidade integrad
 - [Go](https://go.dev/dl/) 1.27 ou superior
 - `make` (opcional; todos os comandos têm equivalente com `go`)
 - Nenhum banco de dados ou serviço externo: os dados ficam em memória
+- [Node.js](https://nodejs.org/) 22 ou superior, só para a interface web (`web/`)
 
 ## Instalação e execução
 
@@ -68,6 +69,22 @@ curl -X PATCH localhost:8080/tasks/1/status -d '{"status":"in_progress"}'
 curl "localhost:8080/tasks?status=in_progress"
 ```
 
+## Interface web: Esteira
+
+`web/` traz a **Esteira**, uma interface em React que mostra as tarefas como um quadro de três
+estações (A fazer → Em andamento → Concluída). Os cartões deslizam de uma estação para outra
+quando mudam de status. Tem modo claro e escuro, layout para celular (as estações viram um
+carrossel), atalho <kbd>/</kbd> para criar tarefa e passa nos testes de acessibilidade WCAG 2.1 AA
+do axe-core. As animações respeitam a preferência "reduzir movimento" do sistema.
+
+```bash
+make run     # terminal 1: API em http://localhost:8080
+make web     # terminal 2: interface em http://localhost:5173
+```
+
+A interface chama `/api/...`, e o Vite encaminha essas chamadas para a API, então não é preciso
+habilitar CORS. Para usar outra API: `API_URL=http://localhost:9090 npm run dev` (dentro de `web/`).
+
 ## Comandos
 
 | Comando      | O que faz                                        |
@@ -81,6 +98,8 @@ curl "localhost:8080/tasks?status=in_progress"
 | `make vuln`  | Procura vulnerabilidades conhecidas (govulncheck) |
 | `make secrets` | Procura segredos no histórico do Git (gitleaks)  |
 | `make smoke` | Sobe o binário e executa o teste de fumaça       |
+| `make web`   | Sobe a interface web em `http://localhost:5173`  |
+| `make web-check` | Roda auditoria, lint, tipos, testes e build do frontend |
 | `make fmt`   | Formata o código                                 |
 | `make test-report` | Executa os testes como no CI e gera relatórios em `reports/` |
 | `make ci`    | Reproduz localmente todos os gates do pipeline   |
@@ -101,7 +120,8 @@ o pipeline fica vermelho e o PR não pode ser integrado.
 | 5    | Gate 5 · Dependências | `go mod verify` ok e `govulncheck` sem vulnerabilidades |
 | 6    | Gate 6 · Segredos   | `gitleaks` sem nenhum segredo em todo o histórico |
 | 7    | Gate 7 · Teste de fumaça | O binário sobe e o fluxo principal responde pela rede |
-| -    | Quality Gate        | Decisão final: aprova só se os 7 gates foram aprovados |
+| 8    | Gate 8 · Frontend   | `npm audit`, lint + acessibilidade, tipos, testes (axe-core) e cobertura ≥ 80% |
+| -    | Quality Gate        | Decisão final: aprova só se os 8 gates foram aprovados |
 
 O check **Quality Gate** é obrigatório na proteção da branch `main`, então um PR com qualquer gate
 reprovado não pode ser integrado. O Gate 5 também roda toda segunda-feira, para pegar
@@ -115,6 +135,7 @@ As fichas completas de cada gate estão em [docs/quality-gates.md](docs/quality-
 cmd/server/        ponto de entrada: monta dependências e sobe o servidor
 internal/task/     domínio: entidade, validações, ciclo de status, serviço e repositório
 internal/httpapi/  camada HTTP: rotas, JSON e mapeamento de erros
+web/               interface web "Esteira" (React + Vite + TypeScript)
 scripts/           scripts usados pelo pipeline (cobertura e teste de fumaça)
 docs/              caracterização do sistema, quality gates e relatórios
 .github/workflows/ pipeline de CI

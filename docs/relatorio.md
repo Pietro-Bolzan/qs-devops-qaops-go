@@ -5,7 +5,7 @@
 | Campo        | Registro                                              |
 |--------------|-------------------------------------------------------|
 | Integrantes  | Pietro Bolzan e Eduardo dos Santos Lourenço           |
-| Sistema      | API de Tarefas: API REST em Go para gerenciar tarefas |
+| Sistema      | API de Tarefas (API REST em Go) e interface web Esteira |
 | Repositório  | https://github.com/Pietro-Bolzan/qs-devops-qaops-go   |
 | Plataforma   | GitHub Actions (`ubuntu-latest`, Go 1.27)             |
 | Data         | 29/10/2026                                            |
@@ -22,9 +22,15 @@ rápido (o que encurta o ciclo de feedback do pipeline) e gera um binário únic
 externas reduz a superfície de ataque e a manutenção de dependências. As consequências disso para o
 Gate 5 estão discutidas na seção 8.
 
+A interface web **Esteira** (`web/`) usa React 19, Vite 8, TypeScript e Motion (animações). Ela
+mostra as tarefas como um quadro de três estações (A fazer → Em andamento → Concluída), tem modo
+claro e escuro, funciona no celular e respeita a preferência "reduzir movimento". Fala com a API só
+pelo contrato HTTP: as regras continuam na API, e a interface apenas esconde as ações inválidas.
+
 **Arquitetura.** Três camadas, cada uma dependendo só da de baixo:
 
 ```text
+web/ (Esteira)    → interface React; chama /api/..., que o Vite encaminha para a API
 cmd/server        → monta as dependências, sobe o servidor HTTP e faz desligamento gracioso
 internal/httpapi  → rotas, validação do JSON, tradução de erros de domínio em status HTTP
 internal/task     → entidade Tarefa, regras de validação, ciclo de status,
@@ -61,6 +67,7 @@ existe para controlar ao menos um deles.
 | R8 | Componente com vulnerabilidade conhecida                   | `govulncheck`                   | 5    |
 | R9 | Segredo versionado no repositório                          | `gitleaks` em todo o histórico + `.gitignore` | 6 |
 | R10 | O binário entregue não sobe ou não atende pela rede       | Teste de fumaça do binário      | 7    |
+| R11 | Interface quebra o fluxo, fica inacessível ou usa pacote npm vulnerável | Testes de componente, axe-core, lint e `npm audit` | 8 |
 
 Na primeira versão do pipeline (Gates 1 a 5), o R9 era o único risco sem verificação automática.
 A análise crítica (seção 8) apontou essa lacuna, e o **Gate 6** foi criado para fechá-la. O R10
@@ -81,7 +88,8 @@ push / PR ─► Gate 1 · Build ─┬─► Gate 2 · Testes ──► Gate 4 
                              ├─► Gate 3 · Análise estática ──────────────┤
                              ├─► Gate 5 · Dependências ──────────────────┼─► Quality Gate
                              └─► Gate 7 · Teste de fumaça ───────────────┤   (decisão final)
-          Gate 6 · Segredos (não depende do build) ──────────────────────┘
+          Gate 6 · Segredos (não depende do build) ──────────────────────┤
+          Gate 8 · Frontend (não depende do build) ──────────────────────┘
 ```
 
 | Etapa (job)               | Ferramentas                         | Evidência gerada                          |
@@ -93,6 +101,7 @@ push / PR ─► Gate 1 · Build ─┬─► Gate 2 · Testes ──► Gate 4 
 | Gate 5 · Dependências     | `go mod verify` + `govulncheck` v1.9.0 | `govulncheck.txt`                      |
 | Gate 6 · Segredos         | `gitleaks` v8.30.1 (binário com SHA-256 conferido) | `gitleaks.json` + tabela no resumo |
 | Gate 7 · Teste de fumaça  | `scripts/smoke-test.sh` sobre o binário do Gate 1 | Tabela esperado × obtido + log do servidor |
+| Gate 8 · Frontend         | `npm ci`, `npm audit`, `oxlint` + `jsx-a11y`, TypeScript, Vitest + Testing Library + axe-core | `junit.xml`, cobertura HTML, build `esteira-web` |
 | Quality Gate              | Script de consolidação              | Tabela "Decisão do Quality Gate"          |
 
 **Decisões de projeto do pipeline:**
@@ -141,8 +150,14 @@ todas as execuções do pipeline.
 - **Falha de infraestrutura simulada.** Um repositório falso que sempre falha confirma que o serviço
   propaga o erro e que a API responde `500` sem expor a mensagem interna.
 
-**Categorias não aplicáveis.** Não há testes de interface (o sistema não tem interface gráfica) nem
-de banco de dados (a persistência é em memória). Testes de carga e de desempenho ficaram fora do
+**Interface web.** A Esteira tem 26 casos em `web/src`: testes de componente com Testing Library e
+uma API falsa que imita a RN01, a RN06 e a RN07 (criar, mover entre estações, conflito 409, API fora
+do ar, tema, atalho de teclado), testes do cliente HTTP, da formatação de prazos (valores-limite:
+ontem, hoje, amanhã, 3 dias) e **testes de acessibilidade com axe-core**, que reprovam se houver
+qualquer violação WCAG 2.1 A/AA. A cobertura de `web/src` fica em torno de 96%.
+
+**Categorias não aplicáveis.** Não há testes de banco de dados (a persistência é em memória) nem
+testes de ponta a ponta da interface com a API real. Testes de carga e de desempenho ficaram fora do
 escopo (seção 8).
 
 ## 6. Quality gates
@@ -158,6 +173,7 @@ As fichas completas estão em `docs/quality-gates.md`. Resumo:
 | 5 · Dependências | `govulncheck` sem vulnerabilidade alcançável | R8 | Bloqueia e exige revisão | Só vulnerabilidades já publicadas |
 | 6 · Segredos | Zero achados do `gitleaks` em **todos os commits** | R9 | Bloqueia; a credencial exposta deve ser revogada | Detecta padrões e alta entropia; formatos incomuns escapam |
 | 7 · Teste de fumaça | O binário sobe em até 10 s e passa nas 10 verificações HTTP (inclui RN01, RN07 e `SIGTERM`) | R10 | Bloqueia | Não mede desempenho nem persistência |
+| 8 · Frontend | `npm audit` sem alta/crítica, lint zerado, tipos ok, 100% dos testes, 0 violações WCAG, cobertura ≥ 80% | R11 | Bloqueia | jsdom não mede contraste, layout nem animação |
 
 **Justificativa dos limites:**
 
@@ -176,6 +192,12 @@ garantia invisível. Ele foi refatorado. A segunda era um falso positivo: o `mis
 inglês e acusou "Comando" nos comentários em português. Esse linter foi removido, com a
 justificativa registrada na configuração. Isso mostra que a configuração de um gate também precisa
 de avaliação crítica, não só de cópia.
+
+**Achados do Gate 8.** Durante o desenvolvimento da interface, o `oxlint` pegou 4 problemas reais
+(`set-state-in-effect` e três `prefer-tag-over-role`, corrigidos com `<output>`, `<fieldset>` e
+`<progress>`). O axe-core, rodando no navegador, pegou um contraste de **3,83:1** numa dica do
+formulário no modo escuro (o mínimo é 4,5:1). Esse último o pipeline **não** pegaria, porque o
+jsdom não calcula estilos: é um exemplo concreto de limitação de um gate.
 
 ## 7. Experimentos
 
@@ -214,7 +236,8 @@ revelou o **R10**: o binário nunca era executado no pipeline, o que levou ao **
 fumaça). Hoje R1 a R10 têm verificação automática. O Gate 6 também ensina um limite: um `git
 revert` **não** resolve um vazamento, porque o segredo continua no histórico. A correção é revogar a
 credencial e reescrever o histórico antes do merge (na `main`, protegida contra *force push*, só
-resta revogar). Continuam abertos: **desempenho e carga**, sem nenhum teste; **persistência real**, já que o repositório em memória
+resta revogar). Continuam abertos: **desempenho e carga**, sem nenhum teste; **ponta a ponta da interface**, já
+que o front é testado com uma API falsa (um teste com Playwright contra a API real fecharia isso); **persistência real**, já que o repositório em memória
 não exercita banco, migrações nem transações; e **falhas de lógica não especificadas**, porque os
 testes verificam as regras que a dupla escreveu, não as que esqueceu.
 
@@ -231,8 +254,8 @@ sem correção disponível e o teste exploratório da API na demonstração.
 
 **Qual é o custo de manter os testes e os gates?** São cerca de 900 linhas de teste para cerca de
 720 de código de produção (contando comentários). Toda mudança de regra exige atualizar testes em até três camadas. As
-ferramentas fixadas precisam de atualização periódica (Go, linters, *actions*), e cada atualização
-pode trazer regras novas. O limite de cobertura pode incentivar testes vazios se não houver revisão.
+ferramentas fixadas precisam de atualização periódica (Go, linters, *actions* e, desde a interface,
+os pacotes npm), e cada atualização pode trazer regras novas. O limite de cobertura pode incentivar testes vazios se não houver revisão.
 Em troca, a regressão do experimento, que seria um defeito em produção, custou alguns minutos de CI.
 
 Um caso real mostrou esse custo. Em 19/10/2026 o rótulo `ubuntu-latest` do GitHub passou a apontar
@@ -265,7 +288,7 @@ faltam métricas (latência, taxa de erro por rota, ex.: Prometheus), alertas e 
 | Integrante | Partes | Contribuição |
 |------------|--------|--------------|
 | Pietro Bolzan | 1 a 5 | Estrutura do repositório e caracterização do sistema; domínio e regras de negócio; repositório e serviço; API HTTP; testes unitários e de API; pipeline base com os Gates 1 e 2. |
-| Eduardo dos Santos Lourenço | 6 a 11 | Gate de análise estática (incluindo a correção dos achados); gate de cobertura (incluindo a correção do script para o gawk); gate de dependências e decisão consolidada; proteção da branch; execução e registro dos experimentos; relatório e roteiro da demonstração; gates de segredos e de teste de fumaça. |
+| Eduardo dos Santos Lourenço | 6 a 12 | Gate de análise estática (incluindo a correção dos achados); gate de cobertura (incluindo a correção do script para o gawk); gate de dependências e decisão consolidada; proteção da branch; execução e registro dos experimentos; relatório e roteiro da demonstração; gates de segredos e de teste de fumaça; interface web Esteira e gate do frontend. |
 
 Os dois integrantes revisaram os PRs um do outro, e o histórico de commits do repositório registra
 a autoria de cada parte. Cada parte entrou por um pull request, integrado com *merge commit*, e as
