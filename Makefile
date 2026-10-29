@@ -1,9 +1,10 @@
 BIN := bin/tarefas
 GOTESTSUM := go run gotest.tools/gotestsum@v1.13.0
 GOLANGCI_LINT := go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0
+GOVULNCHECK := go run golang.org/x/vuln/cmd/govulncheck@v1.9.0
 
 .DEFAULT_GOAL := help
-.PHONY: help deps build run test test-report cover vet lint fmt clean ci
+.PHONY: help deps build run test test-report cover vet lint vuln fmt clean ci
 
 help: ## Lista os alvos disponíveis
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-12s %s\n", $$1, $$2}'
@@ -36,10 +37,13 @@ vet: ## Executa o go vet
 lint: ## Executa a análise estática (golangci-lint, regras em .golangci.yml)
 	$(GOLANGCI_LINT) run ./...
 
+vuln: ## Procura vulnerabilidades conhecidas (govulncheck)
+	$(GOVULNCHECK) ./...
+
 fmt: ## Formata o código
 	gofmt -s -w .
 
 clean: ## Remove binários e relatórios gerados
 	rm -rf bin reports coverage.out coverage.html
 
-ci: deps vet build cover lint ## Reproduz localmente os gates do pipeline
+ci: deps vet build cover lint vuln ## Reproduz localmente os gates do pipeline
