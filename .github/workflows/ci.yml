@@ -27,6 +27,9 @@ env:
   GOTESTSUM_VERSION: v1.13.0
   GOLANGCI_LINT_VERSION: v2.15.0
   GOVULNCHECK_VERSION: v1.9.0
+  # Binário oficial do gitleaks, com o SHA-256 publicado na release (cadeia de suprimentos).
+  GITLEAKS_VERSION: 8.30.1
+  GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
 
 jobs:
   build:
@@ -239,11 +242,99 @@ jobs:
           retention-days: 30
           if-no-files-found: ignore
 
+  secrets:
+    name: "Gate 6 · Segredos"
+    # Não depende do build: roda desde o início, em paralelo a todos os gates.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Baixar código (histórico completo)
+        uses: actions/checkout@v7
+        with:
+          # Um segredo removido em commit posterior continua no histórico e
+          # continua vazado, por isso o gate analisa todos os commits.
+          fetch-depth: 0
+
+      - name: Instalar gitleaks (versão fixa e checksum verificado)
+        shell: bash
+        run: |
+          cd "$RUNNER_TEMP"
+          curl -sSfL -o gitleaks.tar.gz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  gitleaks.tar.gz" | sha256sum --check
+          tar -xzf gitleaks.tar.gz gitleaks
+          sudo install gitleaks /usr/local/bin/gitleaks
+          gitleaks version
+
+      # Sai com erro se encontrar senha, token ou chave em qualquer commit.
+      # --redact: o valor encontrado nunca aparece no log nem no relatório.
+      - name: Procurar segredos no histórico do Git
+        run: |
+          mkdir -p reports
+          gitleaks git --redact --no-banner --verbose \
+            --report-format json --report-path reports/gitleaks.json .
+
+      - name: Resumo da varredura de segredos
+        if: always()
+        shell: bash
+        run: |
+          commits=$(git rev-list --count HEAD)
+          findings=0
+          if [ -f reports/gitleaks.json ]; then
+            findings=$(grep -c '"RuleID"' reports/gitleaks.json || true)
+          fi
+          {
+            echo "## Gate 6 · Segredos"
+            echo "| Commits analisados | Segredos encontrados |"
+            echo "|-------------------:|---------------------:|"
+            echo "| $commits | $findings |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publicar relatório de segredos
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: relatorio-segredos
+          path: reports/gitleaks.json
+          retention-days: 30
+          if-no-files-found: ignore
+
+  smoke:
+    name: "Gate 7 · Teste de fumaça"
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@v7
+
+      # Testa exatamente o binário publicado pelo Gate 1 (o artefato que
+      # seria entregue), e não uma nova compilação.
+      - name: Baixar binário do Gate 1
+        uses: actions/download-artifact@v8
+        with:
+          name: tarefas-linux-amd64
+          path: bin
+
+      - name: Subir o servidor e verificar o fluxo principal
+        run: |
+          chmod +x bin/tarefas
+          ./scripts/smoke-test.sh bin/tarefas
+
+      - name: Publicar log do servidor
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: relatorio-fumaca
+          path: reports/smoke-server.log
+          retention-days: 30
+          if-no-files-found: ignore
+
   # Decisão final: um único check obrigatório na proteção da branch main.
   # Roda sempre (mesmo com falhas antes) para registrar o resultado de cada gate.
   quality-gate:
     name: "Quality Gate"
-    needs: [build, test, lint, coverage, vulnerabilities]
+    needs: [build, test, lint, coverage, vulnerabilities, secrets, smoke]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -256,6 +347,8 @@ jobs:
           LINT: ${{ needs.lint.result }}
           COVERAGE: ${{ needs.coverage.result }}
           VULN: ${{ needs.vulnerabilities.result }}
+          SECRETS: ${{ needs.secrets.result }}
+          SMOKE: ${{ needs.smoke.result }}
         run: |
           icon() {
             case "$1" in
@@ -274,9 +367,11 @@ jobs:
             echo "| 3 · Análise estática | $(icon "$LINT") |"
             echo "| 4 · Cobertura | $(icon "$COVERAGE") |"
             echo "| 5 · Dependências | $(icon "$VULN") |"
+            echo "| 6 · Segredos | $(icon "$SECRETS") |"
+            echo "| 7 · Teste de fumaça | $(icon "$SMOKE") |"
           } >> "$GITHUB_STEP_SUMMARY"
 
-          for result in "$BUILD" "$TEST" "$LINT" "$COVERAGE" "$VULN"; do
+          for result in "$BUILD" "$TEST" "$LINT" "$COVERAGE" "$VULN" "$SECRETS" "$SMOKE"; do
             if [ "$result" != "success" ]; then
               echo "::error::Quality gate REPROVADO: pelo menos um gate não foi aprovado (veja o resumo)."
               echo "**Decisão: ❌ BLOQUEADO**" >> "$GITHUB_STEP_SUMMARY"
