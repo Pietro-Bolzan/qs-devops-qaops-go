@@ -152,3 +152,45 @@ jobs:
           path: reports/golangci-lint.xml
           retention-days: 30
           if-no-files-found: ignore
+
+  coverage:
+    name: "Gate 4 · Cobertura"
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      # Limites justificados em docs/quality-gates.md (Gate 4).
+      COVERAGE_MIN_DOMAIN: "90"
+      COVERAGE_MIN_TOTAL: "80"
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@v7
+
+      - name: Instalar Go (versão do go.mod)
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          check-latest: true
+          cache-dependency-path: go.mod
+
+      # Reaproveita o perfil gerado pelo Gate 2, sem rodar os testes de novo.
+      - name: Baixar perfil de cobertura do Gate 2
+        uses: actions/download-artifact@v8
+        with:
+          name: relatorio-testes
+          path: reports
+
+      - name: Gerar relatório HTML de cobertura
+        run: go tool cover -html=reports/coverage.out -o reports/coverage.html
+
+      - name: Verificar limites de cobertura
+        run: ./scripts/coverage-gate.sh reports/coverage.out
+
+      - name: Publicar relatório de cobertura
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: relatorio-cobertura
+          path: reports/coverage.html
+          retention-days: 30
+          if-no-files-found: ignore
