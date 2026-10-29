@@ -3,7 +3,7 @@ GOTESTSUM := go run gotest.tools/gotestsum@v1.13.0
 GOLANGCI_LINT := go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0
 
 .DEFAULT_GOAL := help
-.PHONY: help deps build run test test-report vet lint fmt clean ci
+.PHONY: help deps build run test test-report cover vet lint fmt clean ci
 
 help: ## Lista os alvos disponíveis
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-12s %s\n", $$1, $$2}'
@@ -26,6 +26,10 @@ test-report: ## Executa os testes como no CI, gerando relatórios em reports/
 	$(GOTESTSUM) --format testname --junitfile reports/junit.xml --jsonfile reports/test-output.json \
 		-- -race -count=1 -covermode=atomic -coverprofile=reports/coverage.out ./...
 
+cover: test-report ## Verifica os limites de cobertura e gera reports/coverage.html
+	go tool cover -html=reports/coverage.out -o reports/coverage.html
+	./scripts/coverage-gate.sh reports/coverage.out
+
 vet: ## Executa o go vet
 	go vet ./...
 
@@ -38,4 +42,4 @@ fmt: ## Formata o código
 clean: ## Remove binários e relatórios gerados
 	rm -rf bin reports coverage.out coverage.html
 
-ci: deps vet build test-report lint ## Reproduz localmente os gates do pipeline
+ci: deps vet build cover lint ## Reproduz localmente os gates do pipeline
