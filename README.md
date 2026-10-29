@@ -66,6 +66,7 @@ curl "localhost:8080/tasks?status=in_progress"
 | `make run`   | Executa a API localmente                         |
 | `make test`  | Executa testes unitários e de API (com `-race`)  |
 | `make vet`   | Executa o `go vet`                               |
+| `make lint`  | Executa a análise estática (golangci-lint)       |
 | `make fmt`   | Formata o código                                 |
 | `make clean` | Remove binários e relatórios                     |
 | `make test-report` | Executa os testes como no CI e gera relatórios em `reports/` |
@@ -81,6 +82,7 @@ o pipeline fica vermelho e o PR não pode ser integrado.
 |------|---------------------|--------------------------------------------------|
 | 1    | Gate 1 · Build      | Dependências verificadas, compila e `go vet` sem erros |
 | 2    | Gate 2 · Testes     | 100% dos testes unitários e de API passando, com `-race` |
+| 3    | Gate 3 · Análise estática | `golangci-lint` sem nenhum problema         |
 
 As fichas completas de cada gate estão em [docs/quality-gates.md](docs/quality-gates.md).
 
