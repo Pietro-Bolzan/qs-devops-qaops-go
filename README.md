@@ -68,6 +68,7 @@ curl "localhost:8080/tasks?status=in_progress"
 | `make cover` | Verifica a cobertura e gera `reports/coverage.html` |
 | `make vet`   | Executa o `go vet`                               |
 | `make lint`  | Executa a análise estática (golangci-lint)       |
+| `make vuln`  | Procura vulnerabilidades conhecidas (govulncheck) |
 | `make fmt`   | Formata o código                                 |
 | `make clean` | Remove binários e relatórios                     |
 | `make test-report` | Executa os testes como no CI e gera relatórios em `reports/` |
@@ -85,6 +86,12 @@ o pipeline fica vermelho e o PR não pode ser integrado.
 | 2    | Gate 2 · Testes     | 100% dos testes unitários e de API passando, com `-race` |
 | 3    | Gate 3 · Análise estática | `golangci-lint` sem nenhum problema         |
 | 4    | Gate 4 · Cobertura  | Domínio ≥ 90% e total (`internal/`) ≥ 80%        |
+| 5    | Gate 5 · Dependências | `go mod verify` ok e `govulncheck` sem vulnerabilidades |
+| -    | Quality Gate        | Decisão final: aprova só se os 5 gates foram aprovados |
+
+O check **Quality Gate** é obrigatório na proteção da branch `main`, então um PR com qualquer gate
+reprovado não pode ser integrado. O Gate 5 também roda toda segunda-feira, para pegar
+vulnerabilidades publicadas depois do último commit.
 
 As fichas completas de cada gate estão em [docs/quality-gates.md](docs/quality-gates.md).
 
