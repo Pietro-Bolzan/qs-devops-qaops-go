@@ -9,6 +9,10 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+  # Toda segunda-feira às 06:00 UTC: novas vulnerabilidades são publicadas
+  # mesmo sem mudança no código, então o Gate 5 também roda por agenda.
+  schedule:
+    - cron: "0 6 * * 1"
 
 # Privilégio mínimo: o pipeline só precisa ler o código.
 permissions:
@@ -22,6 +26,7 @@ concurrency:
 env:
   GOTESTSUM_VERSION: v1.13.0
   GOLANGCI_LINT_VERSION: v2.15.0
+  GOVULNCHECK_VERSION: v1.9.0
 
 jobs:
   build:
@@ -194,3 +199,88 @@ jobs:
           path: reports/coverage.html
           retention-days: 30
           if-no-files-found: ignore
+
+  vulnerabilities:
+    name: "Gate 5 · Dependências"
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@v7
+
+      - name: Instalar Go (versão do go.mod)
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          check-latest: true
+          cache-dependency-path: go.mod
+
+      - name: Verificar integridade dos módulos
+        run: go mod verify
+
+      - name: Instalar govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@${{ env.GOVULNCHECK_VERSION }}
+
+      # Sai com erro se o código CHAMA uma função vulnerável da biblioteca
+      # padrão ou de um módulo de terceiros (base oficial vuln.go.dev).
+      - name: Procurar vulnerabilidades conhecidas
+        shell: bash
+        run: |
+          mkdir -p reports
+          govulncheck -show verbose ./... | tee reports/govulncheck.txt
+
+      - name: Publicar relatório de vulnerabilidades
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: relatorio-vulnerabilidades
+          path: reports/govulncheck.txt
+          retention-days: 30
+          if-no-files-found: ignore
+
+  # Decisão final: um único check obrigatório na proteção da branch main.
+  # Roda sempre (mesmo com falhas antes) para registrar o resultado de cada gate.
+  quality-gate:
+    name: "Quality Gate"
+    needs: [build, test, lint, coverage, vulnerabilities]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Consolidar resultado dos gates
+        shell: bash
+        env:
+          BUILD: ${{ needs.build.result }}
+          TEST: ${{ needs.test.result }}
+          LINT: ${{ needs.lint.result }}
+          COVERAGE: ${{ needs.coverage.result }}
+          VULN: ${{ needs.vulnerabilities.result }}
+        run: |
+          icon() {
+            case "$1" in
+              success) echo "✅ aprovado" ;;
+              skipped) echo "⏭️ não executado (gate anterior falhou)" ;;
+              cancelled) echo "⚪ cancelado" ;;
+              *) echo "❌ reprovado" ;;
+            esac
+          }
+          {
+            echo "## Decisão do Quality Gate"
+            echo "| Gate | Resultado |"
+            echo "|------|-----------|"
+            echo "| 1 · Build | $(icon "$BUILD") |"
+            echo "| 2 · Testes | $(icon "$TEST") |"
+            echo "| 3 · Análise estática | $(icon "$LINT") |"
+            echo "| 4 · Cobertura | $(icon "$COVERAGE") |"
+            echo "| 5 · Dependências | $(icon "$VULN") |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          for result in "$BUILD" "$TEST" "$LINT" "$COVERAGE" "$VULN"; do
+            if [ "$result" != "success" ]; then
+              echo "::error::Quality gate REPROVADO: pelo menos um gate não foi aprovado (veja o resumo)."
+              echo "**Decisão: ❌ BLOQUEADO**" >> "$GITHUB_STEP_SUMMARY"
+              exit 1
+            fi
+          done
+          echo "**Decisão: ✅ APROVADO**" >> "$GITHUB_STEP_SUMMARY"
