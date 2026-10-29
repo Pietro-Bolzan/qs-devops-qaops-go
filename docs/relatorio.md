@@ -59,9 +59,13 @@ existe para controlar ao menos um deles.
 | R6 | Erros ignorados, código morto, padrões inseguros           | `golangci-lint`                 | 3    |
 | R7 | Regra crítica sem nenhum teste                             | Cobertura por módulo            | 4    |
 | R8 | Componente com vulnerabilidade conhecida                   | `govulncheck`                   | 5    |
-| R9 | Segredo versionado no repositório                          | `.gitignore` + revisão do PR    | manual |
+| R9 | Segredo versionado no repositório                          | `gitleaks` em todo o histórico + `.gitignore` | 6 |
+| R10 | O binário entregue não sobe ou não atende pela rede       | Teste de fumaça do binário      | 7    |
 
-R9 é o único risco sem verificação automática, o que está discutido como lacuna na seção 8.
+Na primeira versão do pipeline (Gates 1 a 5), o R9 era o único risco sem verificação automática.
+A análise crítica (seção 8) apontou essa lacuna, e o **Gate 6** foi criado para fechá-la. O R10
+surgiu na mesma revisão: os testes de API usam `httptest` e nunca executam o binário de verdade,
+então um erro na montagem do servidor passaria por todos os gates.
 
 ## 4. Pipeline
 
@@ -74,8 +78,10 @@ economiza minutos de CI.
 
 ```text
 push / PR ─► Gate 1 · Build ─┬─► Gate 2 · Testes ──► Gate 4 · Cobertura ─┐
-                             ├─► Gate 3 · Análise estática ──────────────┼─► Quality Gate
-                             └─► Gate 5 · Dependências ──────────────────┘   (decisão final)
+                             ├─► Gate 3 · Análise estática ──────────────┤
+                             ├─► Gate 5 · Dependências ──────────────────┼─► Quality Gate
+                             └─► Gate 7 · Teste de fumaça ───────────────┤   (decisão final)
+          Gate 6 · Segredos (não depende do build) ──────────────────────┘
 ```
 
 | Etapa (job)               | Ferramentas                         | Evidência gerada                          |
@@ -85,6 +91,8 @@ push / PR ─► Gate 1 · Build ─┬─► Gate 2 · Testes ──► Gate 4 
 | Gate 3 · Análise estática | `golangci-lint` v2.15.0             | Anotações no PR + `golangci-lint.xml`     |
 | Gate 4 · Cobertura        | `go tool cover` + `scripts/coverage-gate.sh` | `coverage.html` + tabela no resumo |
 | Gate 5 · Dependências     | `go mod verify` + `govulncheck` v1.9.0 | `govulncheck.txt`                      |
+| Gate 6 · Segredos         | `gitleaks` v8.30.1 (binário com SHA-256 conferido) | `gitleaks.json` + tabela no resumo |
+| Gate 7 · Teste de fumaça  | `scripts/smoke-test.sh` sobre o binário do Gate 1 | Tabela esperado × obtido + log do servidor |
 | Quality Gate              | Script de consolidação              | Tabela "Decisão do Quality Gate"          |
 
 **Decisões de projeto do pipeline:**
@@ -148,6 +156,8 @@ As fichas completas estão em `docs/quality-gates.md`. Resumo:
 | 3 · Análise estática | Zero problemas no `golangci-lint` | R6 | Bloqueia | Só pega padrões conhecidos |
 | 4 · Cobertura | Domínio ≥ 90%, total ≥ 80% | R7 | Bloqueia | Mede execução, não verificação |
 | 5 · Dependências | `govulncheck` sem vulnerabilidade alcançável | R8 | Bloqueia e exige revisão | Só vulnerabilidades já publicadas |
+| 6 · Segredos | Zero achados do `gitleaks` em **todos os commits** | R9 | Bloqueia; a credencial exposta deve ser revogada | Detecta padrões e alta entropia; formatos incomuns escapam |
+| 7 · Teste de fumaça | O binário sobe em até 10 s e passa nas 10 verificações HTTP (inclui RN01, RN07 e `SIGTERM`) | R10 | Bloqueia | Não mede desempenho nem persistência |
 
 **Justificativa dos limites:**
 
@@ -170,7 +180,8 @@ de avaliação crítica, não só de cópia.
 ## 7. Experimentos
 
 Detalhes e evidências em `docs/experimentos.md`. Os três cenários foram executados **no mesmo pull
-request**, em commits consecutivos:
+request**, em commits consecutivos, quando o pipeline ainda tinha os Gates 1 a 5 (os Gates 6 e 7
+vieram depois, a partir da análise crítica):
 
 | Cenário   | Alteração                                       | Resultado                                          | Execução |
 |-----------|-------------------------------------------------|----------------------------------------------------|----------|
@@ -196,10 +207,14 @@ os testes pegaram o problema; neste, só a análise estática.
 
 ## 8. Análise crítica
 
-**Quais riscos foram cobertos e quais permaneceram?** R1 a R8 têm verificação automática e
-bloqueante. Continuam abertos: **R9 (segredos)**, coberto só por `.gitignore` e revisão, e que
-poderia ser automatizado com uma ferramenta como `gitleaks` ou com o *secret scanning* do GitHub;
-**desempenho e carga**, sem nenhum teste; **persistência real**, já que o repositório em memória
+**Quais riscos foram cobertos e quais permaneceram?** Na primeira versão, R1 a R8 tinham
+verificação automática e bloqueante, e o **R9 (segredos)** dependia só do `.gitignore` e da revisão.
+Essa lacuna levou à criação do **Gate 6** (`gitleaks` sobre todo o histórico), e a mesma revisão
+revelou o **R10**: o binário nunca era executado no pipeline, o que levou ao **Gate 7** (teste de
+fumaça). Hoje R1 a R10 têm verificação automática. O Gate 6 também ensina um limite: um `git
+revert` **não** resolve um vazamento, porque o segredo continua no histórico. A correção é revogar a
+credencial e reescrever o histórico antes do merge (na `main`, protegida contra *force push*, só
+resta revogar). Continuam abertos: **desempenho e carga**, sem nenhum teste; **persistência real**, já que o repositório em memória
 não exercita banco, migrações nem transações; e **falhas de lógica não especificadas**, porque os
 testes verificam as regras que a dupla escreveu, não as que esqueceu.
 
@@ -240,7 +255,8 @@ nenhum integrante, nem quem configurou o pipeline, consegue contornar o gate.
 (2) Um job de *deploy* só na `main`, depois do Quality Gate, primeiro em homologação, com aprovação
 manual (*environments* do GitHub) antes de produção. (3) Credenciais da nuvem via OIDC ou *Secrets*,
 nunca no repositório. (4) *Smoke test* pós-deploy chamando `/health` e um fluxo crítico, com
-*rollback* automático se falhar. (5) Observabilidade: os logs já são JSON estruturado (`slog`);
+*rollback* automático se falhar: o `scripts/smoke-test.sh` do Gate 7 já faz isso e só precisaria
+receber a URL do ambiente publicado. (5) Observabilidade: os logs já são JSON estruturado (`slog`);
 faltam métricas (latência, taxa de erro por rota, ex.: Prometheus), alertas e rastreamento.
 (6) Persistência real com testes de integração usando banco em contêiner.
 
@@ -249,7 +265,7 @@ faltam métricas (latência, taxa de erro por rota, ex.: Prometheus), alertas e 
 | Integrante | Partes | Contribuição |
 |------------|--------|--------------|
 | Pietro Bolzan | 1 a 5 | Estrutura do repositório e caracterização do sistema; domínio e regras de negócio; repositório e serviço; API HTTP; testes unitários e de API; pipeline base com os Gates 1 e 2. |
-| Eduardo dos Santos Lourenço | 6 a 10 | Gate de análise estática (incluindo a correção dos achados); gate de cobertura; gate de dependências e decisão consolidada; proteção da branch; execução e registro dos experimentos; relatório e roteiro da demonstração. |
+| Eduardo dos Santos Lourenço | 6 a 11 | Gate de análise estática (incluindo a correção dos achados); gate de cobertura (incluindo a correção do script para o gawk); gate de dependências e decisão consolidada; proteção da branch; execução e registro dos experimentos; relatório e roteiro da demonstração; gates de segredos e de teste de fumaça. |
 
 Os dois integrantes revisaram os PRs um do outro, e o histórico de commits do repositório registra
 a autoria de cada parte. Cada parte entrou por um pull request, integrado com *merge commit*, e as
