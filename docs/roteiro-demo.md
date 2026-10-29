@@ -13,14 +13,14 @@
 
 | Tempo  | Quem            | O que mostrar |
 |--------|-----------------|---------------|
-| 0:00–1:30 | Integrante 1 | **Contexto.** O que é a API e a funcionalidade estudada (ciclo de vida da tarefa). Mostrar os riscos R1 a R9 em `docs/sistema.md`: os gates nasceram desses riscos. |
+| 0:00–1:30 | Integrante 1 | **Contexto.** O que é a API e a funcionalidade estudada (ciclo de vida da tarefa). Mostrar os riscos R1 a R10 em `docs/sistema.md`: os gates nasceram desses riscos. |
 | 1:30–3:00 | Integrante 1 | **Sistema rodando.** `make run` e, em outro terminal, um `curl` criando uma tarefa e um tentando `todo → done`, que devolve `409`. Mostrar rapidamente um teste de tabela (`TestCanTransition`) e um teste de API (`TestTaskLifecycle`). |
-| 3:00–5:00 | Integrante 1 | **Pipeline.** Abrir `.github/workflows/ci.yml` e mostrar os gatilhos, os 5 gates, o paralelismo e o job `Quality Gate`. Mostrar a regra de proteção da `main` exigindo o check `Quality Gate`. |
+| 3:00–5:00 | Integrante 1 | **Pipeline.** Abrir `.github/workflows/ci.yml` e mostrar os gatilhos, os 7 gates, o paralelismo (o Gate 6 nem espera o build) e o job `Quality Gate`. Mostrar a regra de proteção da `main` exigindo o check `Quality Gate`. |
 | 5:00–6:00 | Integrante 2 | **Acionamento ao vivo.** `git push` da branch `demo/reabrir-tarefa` e abertura do PR. Enquanto roda: explicar a alteração (1 linha que viola a RN07, compila e passa no lint). |
 | 6:00–8:00 | Integrante 2 | **Reprovação.** Gate 2 vermelho; abrir o log e mostrar os testes que falharam (domínio, serviço e API) e o "esperado × obtido". Mostrar a tabela "Decisão do Quality Gate" e o botão de merge bloqueado. Baixar o artefato `relatorio-testes`. Se o pipeline demorar, usar o PR já executado. |
 | 8:00–9:30 | Integrante 2 | **Correção.** `git revert HEAD` e `git push`, depois a nova execução verde. Mostrar no histórico do PR os três estados: aprovado, reprovado e corrigido. |
-| 9:30–11:00 | Integrante 2 | **Evidências e gates.** Mostrar o `coverage.html` (Gate 4), o relatório do `govulncheck` (Gate 5) e uma ficha de gate. Mencionar o achado do Gate 3 (35 `bodyclose` e o falso positivo do `misspell`). |
-| 11:00–12:00 | Os dois     | **Fechamento.** Uma limitação importante (segredos e desempenho sem verificação automática) e o próximo passo (deploy com smoke test e observabilidade). |
+| 9:30–11:00 | Integrante 2 | **Evidências e gates.** Mostrar o `coverage.html` (Gate 4), o relatório do `govulncheck` (Gate 5) e uma ficha de gate. Mencionar o achado do Gate 3 (35 `bodyclose` e o falso positivo do `misspell`), a tabela do teste de fumaça (Gate 7) e por que o `git revert` não resolve um segredo vazado (Gate 6). |
+| 11:00–12:00 | Os dois     | **Fechamento.** Como a análise crítica fez o pipeline evoluir (R9 e R10 viraram os Gates 6 e 7), uma limitação que continua (desempenho e persistência real) e o próximo passo (deploy reaproveitando o teste de fumaça, e observabilidade). |
 
 ## Comandos usados ao vivo
 
@@ -53,5 +53,7 @@ git revert --no-edit HEAD && git push
 - O que o `govulncheck` faz de diferente de uma lista de versões vulneráveis?
 - Por que os testes usam um relógio fixo?
 - O que o `-race` detecta? Mostre um teste que depende dele.
-- Qual risco continua sem verificação automática?
+- Qual risco continua sem verificação automática? (desempenho/carga e persistência real)
+- Por que o Gate 6 analisa todo o histórico e não só os arquivos atuais?
+- Qual a diferença entre o teste de fumaça (Gate 7) e os testes de API (Gate 2)?
 - Qual a diferença entre ter testes automatizados e praticar QAOps?
