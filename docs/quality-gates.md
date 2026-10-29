@@ -6,12 +6,17 @@ Um gate reprovado deixa o pipeline vermelho e, com a proteção da branch `main`
 ## Visão geral do fluxo
 
 ```text
-push / pull request na main
+push / pull request na main  (+ agenda semanal)
         │
         ▼
-  Gate 1 · Build ─┬─► Gate 2 · Testes ──► Gate 4 · Cobertura
-                  └─► Gate 3 · Análise estática
+  Gate 1 · Build ─┬─► Gate 2 · Testes ──► Gate 4 · Cobertura ─┐
+                  ├─► Gate 3 · Análise estática ──────────────┼─► Quality Gate (decisão)
+                  └─► Gate 5 · Dependências ──────────────────┘
 ```
+
+Os gates 2, 3 e 5 rodam em paralelo para o feedback chegar mais rápido. O job **Quality Gate**
+roda sempre, mesmo quando algum gate falha. Ele monta no resumo da execução uma tabela com o
+resultado de cada gate e só é aprovado se **todos** forem aprovados.
 
 ---
 
@@ -63,6 +68,46 @@ cabeçalhos.
 | **Evidência**         | Tabela com a cobertura no resumo da execução, log do job e o artefato `relatorio-cobertura` (`coverage.html`, mostrando linha a linha o que não foi executado). |
 | **Consequência**      | **Bloqueia.** |
 | **Limitação/exceção** | Cobertura mede o que foi **executado**, não o que foi **verificado**: um teste sem asserção aumenta a cobertura sem proteger nada. Por isso o gate complementa o Gate 2 e a revisão dos testes no PR, mas não os substitui. O pacote `cmd/server` (só monta dependências e sobe o servidor) fica fora do cálculo; ele é exercitado manualmente na demonstração. Mudar um limite exige alterar o workflow em um PR com justificativa. |
+
+## Gate 5 · Dependências
+
+| Campo                 | Registro |
+|-----------------------|----------|
+| **Nome e critério**   | Vulnerabilidades em dependências. Aprova se `go mod verify` confirma a integridade dos módulos e o `govulncheck` (v1.9.0) **não encontra nenhuma vulnerabilidade alcançável** pelo código, seja na biblioteca padrão do Go ou em módulos de terceiros. |
+| **Justificativa**     | Risco R8: usar um componente com vulnerabilidade conhecida (lista OWASP Top 10, item "Vulnerable and Outdated Components"). O `govulncheck` consulta a base oficial `vuln.go.dev` e analisa o grafo de chamadas: só reprova se o código **realmente chama** a função vulnerável, o que reduz falsos positivos em relação a ferramentas que olham só a versão. Como essa análise tem poucos falsos positivos, qualquer achado bloqueia. Hoje o projeto não usa módulos de terceiros, mas a biblioteca padrão também recebe correções de segurança, então o gate continua relevante (por isso o CI usa `check-latest: true`). |
+| **Momento**           | Em paralelo aos Gates 2 e 3, depois do Gate 1, em todo `push`/`pull_request` **e toda segunda-feira às 06:00 UTC** (`schedule`), porque uma vulnerabilidade nova pode ser publicada sem nenhuma mudança no código. |
+| **Evidência**         | Log do job e o artefato `relatorio-vulnerabilidades` (`govulncheck.txt`, com os pacotes e a versão do Go analisados). |
+| **Consequência**      | **Bloqueia e exige revisão**: atualizar a dependência ou a versão do Go e registrar a análise no PR. |
+| **Limitação/exceção** | Só conhece vulnerabilidades **já publicadas** na base do Go; falhas inéditas (*zero-day*) e problemas de lógica não são detectados. Não verifica licenças nem segredos no repositório (o risco R9 continua coberto só pelo `.gitignore` e pela revisão do PR). Se uma vulnerabilidade ainda não tiver correção, a exceção é documentar o risco no PR e ter aprovação dos dois integrantes. |
+
+## Quality Gate (decisão final)
+
+| Campo                 | Registro |
+|-----------------------|----------|
+| **Nome e critério**   | Aprova somente se os 5 gates terminaram com `success`. Um gate `failure`, `cancelled` ou `skipped` (que não rodou porque o anterior falhou) reprova. |
+| **Justificativa**     | A proteção da branch exige o nome de cada check. Com um único check consolidado, adicionar um gate novo não exige mudar a configuração do GitHub, e o resultado fica resumido em uma tabela. |
+| **Momento**           | Último job, sempre executado (`if: always()`). |
+| **Evidência**         | Tabela "Decisão do Quality Gate" no resumo da execução. |
+| **Consequência**      | **Bloqueia o merge** (check obrigatório). |
+| **Limitação/exceção** | Depende da proteção da branch estar configurada (abaixo). Sem ela, o pipeline só avisa. |
+
+## Proteção da branch main
+
+O bloqueio do merge é configurado no GitHub (não fica em arquivo do repositório), por um
+*ruleset* de branch:
+
+1. **Settings → Rulesets → New ruleset → New branch ruleset**.
+2. **Ruleset name:** `Proteção da main`. **Enforcement status:** `Active`. **Bypass list:** vazia
+   (nem os administradores podem contornar).
+3. **Target branches → Add target → Include default branch** (`main`).
+4. Em **Rules**, ativar:
+   - **Restrict deletions** e **Block force pushes**;
+   - **Require a pull request before merging**, com *Allowed merge methods* = `Merge`;
+   - **Require status checks to pass**, com o check **`Quality Gate`** (em *Add checks*) e a opção
+     **Require branches to be up to date before merging**.
+5. **Create**.
+
+Com isso, nenhum código chega à `main` sem passar pelos 5 gates, nem mesmo o dos integrantes.
 
 ## Como reproduzir localmente
 
