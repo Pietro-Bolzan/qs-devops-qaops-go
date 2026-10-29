@@ -222,9 +222,7 @@ func (h *handler) writeError(w http.ResponseWriter, err error) {
 func (h *handler) writeJSON(w http.ResponseWriter, status int, body any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(body); err != nil {
-		h.log.Error("falha ao escrever resposta", "erro", err)
-	}
+	json.NewEncoder(w).Encode(body)
 }
 
 func toResponse(t task.Task) taskResponse {
