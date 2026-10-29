@@ -9,7 +9,7 @@ Um gate reprovado deixa o pipeline vermelho e, com a proteção da branch `main`
 push / pull request na main
         │
         ▼
-  Gate 1 · Build ─┬─► Gate 2 · Testes
+  Gate 1 · Build ─┬─► Gate 2 · Testes ──► Gate 4 · Cobertura
                   └─► Gate 3 · Análise estática
 ```
 
@@ -52,6 +52,17 @@ push / pull request na main
 API. O helper `call` fechava o corpo, mas devolvia o `*http.Response`, o que deixava a garantia
 invisível para o leitor e para a ferramenta. O helper foi refatorado para devolver só status e
 cabeçalhos.
+
+## Gate 4 · Cobertura
+
+| Campo                 | Registro |
+|-----------------------|----------|
+| **Nome e critério**   | Cobertura de comandos. Aprova se o domínio (`internal/task`) tem **≥ 90%** e o total do código de aplicação (`internal/...`) tem **≥ 80%**. O cálculo é feito por [`scripts/coverage-gate.sh`](../scripts/coverage-gate.sh) sobre o `coverage.out` do Gate 2. |
+| **Justificativa**     | Risco R7: regra crítica sem teste deixa uma regressão passar despercebida pelo Gate 2. O domínio concentra as regras RN01 a RN07, por isso tem o limite mais alto. 90% e não 100% porque perseguir 100% leva a testes artificiais, escritos só para "pintar" linhas. O limite total de 80% cobre a camada HTTP, onde alguns ramos de erro de infraestrutura (por exemplo, falha ao escrever a resposta) são caros de simular. Quando o gate foi criado, a cobertura era de 100% no domínio e 99,6% no total, então os limites deixam folga para refatorações sem permitir que um módulo inteiro fique sem teste. |
+| **Momento**           | Depois do Gate 2 (reaproveita o perfil gerado por ele), em todo `push`/`pull_request`. |
+| **Evidência**         | Tabela com a cobertura no resumo da execução, log do job e o artefato `relatorio-cobertura` (`coverage.html`, mostrando linha a linha o que não foi executado). |
+| **Consequência**      | **Bloqueia.** |
+| **Limitação/exceção** | Cobertura mede o que foi **executado**, não o que foi **verificado**: um teste sem asserção aumenta a cobertura sem proteger nada. Por isso o gate complementa o Gate 2 e a revisão dos testes no PR, mas não os substitui. O pacote `cmd/server` (só monta dependências e sobe o servidor) fica fora do cálculo; ele é exercitado manualmente na demonstração. Mudar um limite exige alterar o workflow em um PR com justificativa. |
 
 ## Como reproduzir localmente
 

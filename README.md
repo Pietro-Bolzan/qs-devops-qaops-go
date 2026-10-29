@@ -65,6 +65,7 @@ curl "localhost:8080/tasks?status=in_progress"
 | `make build` | Compila o binário em `bin/tarefas`               |
 | `make run`   | Executa a API localmente                         |
 | `make test`  | Executa testes unitários e de API (com `-race`)  |
+| `make cover` | Verifica a cobertura e gera `reports/coverage.html` |
 | `make vet`   | Executa o `go vet`                               |
 | `make lint`  | Executa a análise estática (golangci-lint)       |
 | `make fmt`   | Formata o código                                 |
@@ -83,6 +84,7 @@ o pipeline fica vermelho e o PR não pode ser integrado.
 | 1    | Gate 1 · Build      | Dependências verificadas, compila e `go vet` sem erros |
 | 2    | Gate 2 · Testes     | 100% dos testes unitários e de API passando, com `-race` |
 | 3    | Gate 3 · Análise estática | `golangci-lint` sem nenhum problema         |
+| 4    | Gate 4 · Cobertura  | Domínio ≥ 90% e total (`internal/`) ≥ 80%        |
 
 As fichas completas de cada gate estão em [docs/quality-gates.md](docs/quality-gates.md).
 
@@ -92,6 +94,7 @@ As fichas completas de cada gate estão em [docs/quality-gates.md](docs/quality-
 cmd/server/        ponto de entrada: monta dependências e sobe o servidor
 internal/task/     domínio: entidade, validações, ciclo de status, serviço e repositório
 internal/httpapi/  camada HTTP: rotas, JSON e mapeamento de erros
+scripts/           scripts usados pelo pipeline (gate de cobertura)
 docs/              caracterização do sistema, quality gates e relatórios
 .github/workflows/ pipeline de CI
 ```
