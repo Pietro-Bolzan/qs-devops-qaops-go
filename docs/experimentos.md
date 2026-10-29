@@ -137,6 +137,19 @@ comportamento. Em `internal/httpapi/handler.go`, o erro de escrita da resposta p
 +	json.NewEncoder(w).Encode(body)
 ```
 
-Resultado esperado (validado localmente): build ✅, **testes ✅** (o comportamento não muda),
-**Gate 3 ❌** com `Error return value of (*encoding/json.Encoder).Encode is not checked (errcheck)`,
-anotado na própria linha do PR. Isso mostra por que os testes sozinhos não bastam.
+**Executado** no PR [#10](https://github.com/Pietro-Bolzan/qs-devops-qaops-go/pull/10) (commit
+`4fb0bc3`), que **não foi integrado**:
+
+| Gate | Resultado |
+|------|-----------|
+| 1 · Build | ✅ (35 s) |
+| 2 · Testes | ✅ (47 s): o comportamento observado pelos testes não mudou |
+| 3 · Análise estática | ❌ (21 s): `Error return value of (*encoding/json.Encoder).Encode is not checked (errcheck)`, anotado na linha 225 do `handler.go`, dentro do PR |
+| 4 · Cobertura | ✅ |
+| 5 · Dependências | ✅ |
+| Quality Gate | ❌: merge bloqueado |
+
+A alteração foi revertida (`091468b`) e o PR foi fechado sem merge. Comparado ao experimento
+principal, **o gate que reprovou foi outro**: lá o problema era de comportamento e só os testes o
+pegaram; aqui o comportamento não muda e só a análise estática o pegou. Isso mostra por que os
+testes sozinhos não bastam e por que os gates se complementam.
