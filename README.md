@@ -79,6 +79,8 @@ curl "localhost:8080/tasks?status=in_progress"
 | `make vet`   | Executa o `go vet`                               |
 | `make lint`  | Executa a análise estática (golangci-lint)       |
 | `make vuln`  | Procura vulnerabilidades conhecidas (govulncheck) |
+| `make secrets` | Procura segredos no histórico do Git (gitleaks)  |
+| `make smoke` | Sobe o binário e executa o teste de fumaça       |
 | `make fmt`   | Formata o código                                 |
 | `make test-report` | Executa os testes como no CI e gera relatórios em `reports/` |
 | `make ci`    | Reproduz localmente todos os gates do pipeline   |
@@ -97,7 +99,9 @@ o pipeline fica vermelho e o PR não pode ser integrado.
 | 3    | Gate 3 · Análise estática | `golangci-lint` sem nenhum problema         |
 | 4    | Gate 4 · Cobertura  | Domínio ≥ 90% e total (`internal/`) ≥ 80%        |
 | 5    | Gate 5 · Dependências | `go mod verify` ok e `govulncheck` sem vulnerabilidades |
-| -    | Quality Gate        | Decisão final: aprova só se os 5 gates foram aprovados |
+| 6    | Gate 6 · Segredos   | `gitleaks` sem nenhum segredo em todo o histórico |
+| 7    | Gate 7 · Teste de fumaça | O binário sobe e o fluxo principal responde pela rede |
+| -    | Quality Gate        | Decisão final: aprova só se os 7 gates foram aprovados |
 
 O check **Quality Gate** é obrigatório na proteção da branch `main`, então um PR com qualquer gate
 reprovado não pode ser integrado. O Gate 5 também roda toda segunda-feira, para pegar
@@ -111,7 +115,7 @@ As fichas completas de cada gate estão em [docs/quality-gates.md](docs/quality-
 cmd/server/        ponto de entrada: monta dependências e sobe o servidor
 internal/task/     domínio: entidade, validações, ciclo de status, serviço e repositório
 internal/httpapi/  camada HTTP: rotas, JSON e mapeamento de erros
-scripts/           scripts usados pelo pipeline (gate de cobertura)
+scripts/           scripts usados pelo pipeline (cobertura e teste de fumaça)
 docs/              caracterização do sistema, quality gates e relatórios
 .github/workflows/ pipeline de CI
 ```
@@ -119,7 +123,8 @@ docs/              caracterização do sistema, quality gates e relatórios
 ## Segurança
 
 O repositório não contém senhas, tokens, chaves ou dados pessoais. Arquivos `.env` e chaves
-estão no `.gitignore`. Se o pipeline precisar de algum segredo, ele deve ser cadastrado nos
+estão no `.gitignore`, e o Gate 6 (`gitleaks`) reprova qualquer commit com senha, token ou chave.
+Se o pipeline precisar de algum segredo, ele deve ser cadastrado nos
 *Secrets* da plataforma de CI, nunca no código.
 
 ## Integrantes

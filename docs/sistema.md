@@ -59,7 +59,8 @@ transição.
 | R6  | Erros ignorados, código morto ou padrões inseguros                       | Defeitos silenciosos e vulnerabilidades   | Gate de análise estática             |
 | R7  | Regras críticas sem nenhum teste                                         | Regressões passam sem ser detectadas      | Gate de cobertura                    |
 | R8  | Uso de componente (biblioteca padrão ou módulo) com vulnerabilidade conhecida | Exposição a ataques                 | Gate de dependências                 |
-| R9  | Segredos versionados no repositório                                      | Vazamento de credenciais                  | `.gitignore` + revisão no PR (manual) |
+| R9  | Segredos versionados no repositório                                      | Vazamento de credenciais                  | Gate de segredos (gitleaks) + `.gitignore` |
+| R10 | O binário entregue não sobe ou não atende pela rede (configuração, porta, desligamento) | Sistema fora do ar após a entrega | Teste de fumaça do binário           |
 
 ## Execução local
 

@@ -10,11 +10,14 @@ push / pull request na main  (+ agenda semanal)
         │
         ▼
   Gate 1 · Build ─┬─► Gate 2 · Testes ──► Gate 4 · Cobertura ─┐
-                  ├─► Gate 3 · Análise estática ──────────────┼─► Quality Gate (decisão)
-                  └─► Gate 5 · Dependências ──────────────────┘
+                  ├─► Gate 3 · Análise estática ──────────────┤
+                  ├─► Gate 5 · Dependências ──────────────────┼─► Quality Gate (decisão)
+                  └─► Gate 7 · Teste de fumaça ───────────────┤
+  Gate 6 · Segredos (não depende do build) ───────────────────┘
 ```
 
-Os gates 2, 3 e 5 rodam em paralelo para o feedback chegar mais rápido. O job **Quality Gate**
+Os gates 2, 3, 5 e 7 rodam em paralelo depois do build, e o Gate 6 começa junto com o build, para o
+feedback chegar mais rápido. O job **Quality Gate**
 roda sempre, mesmo quando algum gate falha. Ele monta no resumo da execução uma tabela com o
 resultado de cada gate e só é aprovado se **todos** forem aprovados.
 
@@ -67,7 +70,7 @@ cabeçalhos.
 | **Momento**           | Depois do Gate 2 (reaproveita o perfil gerado por ele), em todo `push`/`pull_request`. |
 | **Evidência**         | Tabela com a cobertura no resumo da execução, log do job e o artefato `relatorio-cobertura` (`coverage.html`, mostrando linha a linha o que não foi executado). |
 | **Consequência**      | **Bloqueia.** |
-| **Limitação/exceção** | Cobertura mede o que foi **executado**, não o que foi **verificado**: um teste sem asserção aumenta a cobertura sem proteger nada. Por isso o gate complementa o Gate 2 e a revisão dos testes no PR, mas não os substitui. O pacote `cmd/server` (só monta dependências e sobe o servidor) fica fora do cálculo; ele é exercitado manualmente na demonstração. Mudar um limite exige alterar o workflow em um PR com justificativa. |
+| **Limitação/exceção** | Cobertura mede o que foi **executado**, não o que foi **verificado**: um teste sem asserção aumenta a cobertura sem proteger nada. Por isso o gate complementa o Gate 2 e a revisão dos testes no PR, mas não os substitui. O pacote `cmd/server` (só monta dependências e sobe o servidor) fica fora do cálculo; ele é exercitado pelo Gate 7 (teste de fumaça do binário). Mudar um limite exige alterar o workflow em um PR com justificativa. |
 
 ## Gate 5 · Dependências
 
@@ -78,13 +81,35 @@ cabeçalhos.
 | **Momento**           | Em paralelo aos Gates 2 e 3, depois do Gate 1, em todo `push`/`pull_request` **e toda segunda-feira às 06:00 UTC** (`schedule`), porque uma vulnerabilidade nova pode ser publicada sem nenhuma mudança no código. |
 | **Evidência**         | Log do job e o artefato `relatorio-vulnerabilidades` (`govulncheck.txt`, com os pacotes e a versão do Go analisados). |
 | **Consequência**      | **Bloqueia e exige revisão**: atualizar a dependência ou a versão do Go e registrar a análise no PR. |
-| **Limitação/exceção** | Só conhece vulnerabilidades **já publicadas** na base do Go; falhas inéditas (*zero-day*) e problemas de lógica não são detectados. Não verifica licenças nem segredos no repositório (o risco R9 continua coberto só pelo `.gitignore` e pela revisão do PR). Se uma vulnerabilidade ainda não tiver correção, a exceção é documentar o risco no PR e ter aprovação dos dois integrantes. |
+| **Limitação/exceção** | Só conhece vulnerabilidades **já publicadas** na base do Go; falhas inéditas (*zero-day*) e problemas de lógica não são detectados. Não verifica licenças nem segredos no repositório (segredos são o papel do Gate 6). Se uma vulnerabilidade ainda não tiver correção, a exceção é documentar o risco no PR e ter aprovação dos dois integrantes. |
+
+## Gate 6 · Segredos
+
+| Campo                 | Registro |
+|-----------------------|----------|
+| **Nome e critério**   | Segredos versionados. Aprova se o `gitleaks` (v8.30.1, regras padrão da ferramenta) encontra **zero segredos** em **todos os commits** do histórico (senhas, tokens de API, chaves privadas, chaves de nuvem). |
+| **Justificativa**     | Risco R9 e regra de segurança do enunciado: nunca versionar senhas, tokens ou chaves. Antes deste gate, o R9 dependia só do `.gitignore` e da atenção de quem revisava o PR, a única verificação manual entre os riscos. Um segredo removido em um commit posterior **continua vazado**, porque fica no histórico, por isso o gate analisa todos os commits (`fetch-depth: 0`) e não só os arquivos atuais. O critério é zero porque um único vazamento já obriga a revogar a credencial. |
+| **Momento**           | Em todo `push`/`pull_request` e na agenda semanal. **Não depende do build**: começa junto com o Gate 1, já que não precisa compilar nada. |
+| **Evidência**         | Log com cada achado (arquivo, linha, regra e commit, com o valor **mascarado** por `--redact`), tabela no resumo da execução (commits analisados e segredos encontrados) e o artefato `relatorio-segredos` (`gitleaks.json`). |
+| **Consequência**      | **Bloqueia.** Além de corrigir o código, a credencial exposta precisa ser **revogada**, porque já pode ter sido copiada. |
+| **Limitação/exceção** | Detecta padrões conhecidos e textos com alta entropia: pode deixar passar um segredo de formato incomum ou acusar um valor de teste como segredo. Um falso positivo é tratado registrando o *fingerprint* do achado em `.gitleaksignore`, com justificativa no PR. O binário é baixado com versão fixa e o SHA-256 é conferido antes da execução, para que a própria ferramenta não vire um risco de cadeia de suprimentos. |
+
+## Gate 7 · Teste de fumaça
+
+| Campo                 | Registro |
+|-----------------------|----------|
+| **Nome e critério**   | Teste de fumaça do binário. Aprova se o **binário gerado pelo Gate 1** sobe em até 10 s e as 10 verificações de [`scripts/smoke-test.sh`](../scripts/smoke-test.sh) passam: `GET /health` (200), criação válida (201) e inválida (422, RN01), consulta (200), ciclo `todo → in_progress → done` (200), reabrir tarefa concluída (409, RN07), tarefa inexistente (404) e desligamento gracioso com `SIGTERM` (código de saída 0). |
+| **Justificativa**     | Risco R10: os testes do Gate 2 usam `httptest`, que chama o roteador em memória, sem rede e sem o `main`. Um erro na montagem do servidor (porta, variáveis de ambiente, timeouts, desligamento) passaria por todos os outros gates. Este gate testa **o mesmo artefato que seria entregue**, fazendo chamadas HTTP reais, como um cliente faria. As verificações são poucas de propósito: o teste de fumaça só confirma que o sistema "liga" e que o caminho principal funciona; os detalhes ficam com o Gate 2. |
+| **Momento**           | Depois do Gate 1 (usa o artefato `tarefas-linux-amd64`), em paralelo aos Gates 2, 3 e 5, em todo `push`/`pull_request`. |
+| **Evidência**         | Tabela "Gate 7 · Teste de fumaça" no resumo da execução (esperado × obtido de cada verificação), anotação `::error::` com a verificação que falhou e o artefato `relatorio-fumaca` (log JSON do servidor). |
+| **Consequência**      | **Bloqueia.** |
+| **Limitação/exceção** | Não mede desempenho nem carga e roda em um único sistema operacional (Linux). Os dados ficam em memória, então não verifica persistência. Uma verificação nova deve entrar só se proteger o caminho principal; o restante pertence aos testes de API do Gate 2. |
 
 ## Quality Gate (decisão final)
 
 | Campo                 | Registro |
 |-----------------------|----------|
-| **Nome e critério**   | Aprova somente se os 5 gates terminaram com `success`. Um gate `failure`, `cancelled` ou `skipped` (que não rodou porque o anterior falhou) reprova. |
+| **Nome e critério**   | Aprova somente se os 7 gates terminaram com `success`. Um gate `failure`, `cancelled` ou `skipped` (que não rodou porque o anterior falhou) reprova. |
 | **Justificativa**     | A proteção da branch exige o nome de cada check. Com um único check consolidado, adicionar um gate novo não exige mudar a configuração do GitHub, e o resultado fica resumido em uma tabela. |
 | **Momento**           | Último job, sempre executado (`if: always()`). |
 | **Evidência**         | Tabela "Decisão do Quality Gate" no resumo da execução. |
@@ -107,7 +132,7 @@ O bloqueio do merge é configurado no GitHub (não fica em arquivo do repositór
      **Require branches to be up to date before merging**.
 5. **Create**.
 
-Com isso, nenhum código chega à `main` sem passar pelos 5 gates, nem mesmo o dos integrantes.
+Com isso, nenhum código chega à `main` sem passar pelos 7 gates, nem mesmo o dos integrantes.
 
 ## Como reproduzir localmente
 
