@@ -22,11 +22,29 @@ const dateLayout = time.DateOnly
 type handler struct {
 	svc *task.Service
 	log *slog.Logger
+	rep ErrorReporter
+}
+
+// ErrorReporter recebe os erros inesperados (status 500) para monitoramento.
+// Em produção é o monitor.Reporter, que envia o erro ao Sentry.
+type ErrorReporter interface {
+	CaptureError(err error, r *http.Request)
+}
+
+// Option ajusta o roteador criado por New.
+type Option func(*handler)
+
+// WithReporter envia os erros inesperados (500) para o monitoramento.
+func WithReporter(rep ErrorReporter) Option {
+	return func(h *handler) { h.rep = rep }
 }
 
 // New devolve o roteador HTTP da API.
-func New(svc *task.Service, logger *slog.Logger) http.Handler {
+func New(svc *task.Service, logger *slog.Logger, opts ...Option) http.Handler {
 	h := &handler{svc: svc, log: logger}
+	for _, opt := range opts {
+		opt(h)
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", h.health)
@@ -75,7 +93,7 @@ func (h *handler) health(w http.ResponseWriter, _ *http.Request) {
 func (h *handler) list(w http.ResponseWriter, r *http.Request) {
 	tasks, err := h.svc.List(task.Status(r.URL.Query().Get("status")))
 	if err != nil {
-		h.writeError(w, err)
+		h.writeError(w, r, err)
 		return
 	}
 
@@ -94,7 +112,7 @@ func (h *handler) create(w http.ResponseWriter, r *http.Request) {
 
 	created, err := h.svc.Create(in)
 	if err != nil {
-		h.writeError(w, err)
+		h.writeError(w, r, err)
 		return
 	}
 	w.Header().Set("Location", fmt.Sprintf("/tasks/%d", created.ID))
@@ -109,7 +127,7 @@ func (h *handler) get(w http.ResponseWriter, r *http.Request) {
 
 	t, err := h.svc.Get(id)
 	if err != nil {
-		h.writeError(w, err)
+		h.writeError(w, r, err)
 		return
 	}
 	h.writeJSON(w, http.StatusOK, toResponse(t))
@@ -127,7 +145,7 @@ func (h *handler) update(w http.ResponseWriter, r *http.Request) {
 
 	updated, err := h.svc.Update(id, in)
 	if err != nil {
-		h.writeError(w, err)
+		h.writeError(w, r, err)
 		return
 	}
 	h.writeJSON(w, http.StatusOK, toResponse(updated))
@@ -145,7 +163,7 @@ func (h *handler) changeStatus(w http.ResponseWriter, r *http.Request) {
 
 	updated, err := h.svc.ChangeStatus(id, req.Status)
 	if err != nil {
-		h.writeError(w, err)
+		h.writeError(w, r, err)
 		return
 	}
 	h.writeJSON(w, http.StatusOK, toResponse(updated))
@@ -157,7 +175,7 @@ func (h *handler) delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.svc.Delete(id); err != nil {
-		h.writeError(w, err)
+		h.writeError(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -203,8 +221,9 @@ func (h *handler) decode(w http.ResponseWriter, r *http.Request, dst any) bool {
 	return true
 }
 
-// writeError traduz erros de domínio para status HTTP.
-func (h *handler) writeError(w http.ResponseWriter, err error) {
+// writeError traduz erros de domínio para status HTTP. Erros inesperados
+// (500) também vão para o monitoramento, se houver um configurado.
+func (h *handler) writeError(w http.ResponseWriter, r *http.Request, err error) {
 	var verr *task.ValidationError
 	switch {
 	case errors.As(err, &verr):
@@ -215,6 +234,9 @@ func (h *handler) writeError(w http.ResponseWriter, err error) {
 		h.writeJSON(w, http.StatusConflict, errorResponse{Error: err.Error()})
 	default:
 		h.log.Error("erro inesperado", "erro", err)
+		if h.rep != nil {
+			h.rep.CaptureError(err, r)
+		}
 		h.writeJSON(w, http.StatusInternalServerError, errorResponse{Error: "erro interno"})
 	}
 }
