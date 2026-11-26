@@ -4,7 +4,7 @@ GOLANGCI_LINT := go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v
 GOVULNCHECK := go run golang.org/x/vuln/cmd/govulncheck@v1.9.0
 
 .DEFAULT_GOAL := help
-.PHONY: help deps build run test test-report cover vet lint vuln secrets smoke web web-check fmt clean ci
+.PHONY: help deps build run test test-report cover vet lint vuln secrets smoke sentry-check web web-check fmt clean ci
 
 help: ## Lista os alvos disponíveis
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-12s %s\n", $$1, $$2}'
@@ -46,6 +46,9 @@ secrets: ## Procura segredos no histórico do Git (gitleaks: brew install gitlea
 
 smoke: build ## Sobe o binário e executa o teste de fumaça
 	./scripts/smoke-test.sh $(BIN)
+
+sentry-check: ## Envia um evento de teste ao Sentry (exige SENTRY_DSN no ambiente)
+	go run ./cmd/sentrycheck
 
 web: ## Sobe a interface em http://localhost:5173 (com a API rodando: make run)
 	cd web && npm install && npm run dev

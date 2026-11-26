@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -321,6 +322,44 @@ func TestInternalErrorIsNotLeaked(t *testing.T) {
 	assertStatus(t, resp, http.StatusInternalServerError)
 	if body.Error != "erro interno" {
 		t.Errorf("detalhe interno vazou para o cliente: %q", body.Error)
+	}
+}
+
+// spyReporter guarda os erros que a API mandaria para o monitoramento.
+type spyReporter struct {
+	mu    sync.Mutex
+	errs  []error
+	rotas []string
+}
+
+func (s *spyReporter) CaptureError(err error, r *http.Request) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.errs = append(s.errs, err)
+	s.rotas = append(s.rotas, r.Method+" "+r.URL.Path)
+}
+
+// TestInternalErrorIsReported garante que só erros inesperados (500) vão
+// para o monitoramento, com a rota que falhou; erros do cliente (4xx) não.
+func TestInternalErrorIsReported(t *testing.T) {
+	spy := &spyReporter{}
+	svc := task.NewService(brokenRepo{task.NewMemoryStore()}, func() time.Time { return now })
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	srv := httptest.NewServer(httpapi.New(svc, logger, httpapi.WithReporter(spy)))
+	t.Cleanup(srv.Close)
+
+	createTask(t, srv, `{"title":"Falha"}`)
+	assertStatus(t, call(t, srv, http.MethodGet, "/tasks/99", "", &apiError{}), http.StatusNotFound)
+	assertStatus(t, call(t, srv, http.MethodPost, "/tasks", `{"title":""}`, &apiError{}), http.StatusUnprocessableEntity)
+	assertStatus(t, call(t, srv, http.MethodPatch, "/tasks/1/status", `{"status":"in_progress"}`, &apiError{}), http.StatusInternalServerError)
+
+	spy.mu.Lock()
+	defer spy.mu.Unlock()
+	if len(spy.errs) != 1 {
+		t.Fatalf("erros reportados = %d, esperado 1 (só o 500): %v", len(spy.errs), spy.errs)
+	}
+	if spy.errs[0].Error() != "disco cheio" || spy.rotas[0] != "PATCH /tasks/1/status" {
+		t.Errorf("reportado %q em %q", spy.errs[0], spy.rotas[0])
 	}
 }
 

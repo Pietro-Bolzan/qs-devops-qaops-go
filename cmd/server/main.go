@@ -12,8 +12,13 @@ import (
 	"time"
 
 	"tarefas/internal/httpapi"
+	"tarefas/internal/monitor"
 	"tarefas/internal/task"
 )
+
+// version é a versão do binário, enviada ao Sentry como "release".
+// No build de entrega: go build -ldflags "-X main.version=v1.0.0".
+var version = "dev"
 
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
@@ -28,10 +33,30 @@ func main() {
 func run(logger *slog.Logger) error {
 	addr := envOr("ADDR", ":8080")
 
+	// Monitoramento de erros (Sentry). Sem SENTRY_DSN fica desligado.
+	// A DSN vem do ambiente ou dos Secrets do CI, nunca do código.
+	rep, err := monitor.New(monitor.Config{
+		DSN:         os.Getenv("SENTRY_DSN"),
+		Environment: envOr("SENTRY_ENVIRONMENT", "local"),
+		Release:     "tarefas@" + version,
+		Logger:      logger,
+	})
+	if err != nil {
+		return err
+	}
+	logger.Info("monitoramento de erros", "sentry", rep.Enabled())
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := rep.Close(ctx); err != nil {
+			logger.Warn("eventos do Sentry não enviados a tempo", "erro", err)
+		}
+	}()
+
 	svc := task.NewService(task.NewMemoryStore(), nil)
 	srv := &http.Server{
 		Addr:              addr,
-		Handler:           httpapi.New(svc, logger),
+		Handler:           rep.Middleware(httpapi.New(svc, logger, httpapi.WithReporter(rep))),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      10 * time.Second,
