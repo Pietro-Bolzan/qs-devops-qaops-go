@@ -13,6 +13,7 @@ O sistema é simples de propósito: o foco do trabalho é a **qualidade integrad
 | [docs/sistema.md](docs/sistema.md)               | Finalidade, arquitetura, regras de negócio e riscos   |
 | [docs/quality-gates.md](docs/quality-gates.md)   | Ficha de cada quality gate e proteção da branch       |
 | [docs/experimentos.md](docs/experimentos.md)     | Cenários aprovado, reprovado e corrigido              |
+| [docs/monitoramento.md](docs/monitoramento.md)   | Monitoramento de erros em execução com o Sentry       |
 | [docs/relatorio.md](docs/relatorio.md)           | Relatório técnico                                     |
 | [docs/roteiro-demo.md](docs/roteiro-demo.md)     | Roteiro da demonstração                               |
 
@@ -98,6 +99,7 @@ habilitar CORS. Para usar outra API: `API_URL=http://localhost:9090 npm run dev`
 | `make vuln`  | Procura vulnerabilidades conhecidas (govulncheck) |
 | `make secrets` | Procura segredos no histórico do Git (gitleaks)  |
 | `make smoke` | Sobe o binário e executa o teste de fumaça       |
+| `make sentry-check` | Envia um evento de teste ao Sentry (exige `SENTRY_DSN`) |
 | `make web`   | Sobe a interface web em `http://localhost:5173`  |
 | `make web-check` | Roda auditoria, lint, tipos, testes e build do frontend |
 | `make fmt`   | Formata o código                                 |
@@ -129,12 +131,28 @@ vulnerabilidades publicadas depois do último commit.
 
 As fichas completas de cada gate estão em [docs/quality-gates.md](docs/quality-gates.md).
 
+## Monitoramento de erros
+
+Com a API rodando, erros inesperados (500) e *panics* são enviados ao [Sentry](https://sentry.io)
+(plano gratuito) com a rota, a pilha de chamadas, o ambiente e a versão. Erros do cliente (4xx) não
+são enviados. A integração usa só a biblioteca padrão do Go, sem dependências novas.
+
+```bash
+SENTRY_DSN="https://<chave>@<org>.ingest.sentry.io/<projeto>" make run
+SENTRY_DSN="https://<chave>@<org>.ingest.sentry.io/<projeto>" make sentry-check  # evento de teste
+```
+
+Sem `SENTRY_DSN` o monitoramento fica desligado e a API funciona igual (é o caso dos testes e do
+CI). Detalhes, decisões e limitações em [docs/monitoramento.md](docs/monitoramento.md).
+
 ## Estrutura
 
 ```text
 cmd/server/        ponto de entrada: monta dependências e sobe o servidor
+cmd/sentrycheck/   envia um evento de teste ao Sentry
 internal/task/     domínio: entidade, validações, ciclo de status, serviço e repositório
 internal/httpapi/  camada HTTP: rotas, JSON e mapeamento de erros
+internal/monitor/  monitoramento de erros: envio de erros 500 e panics ao Sentry
 web/               interface web "Esteira" (React + Vite + TypeScript)
 scripts/           scripts usados pelo pipeline (cobertura e teste de fumaça)
 docs/              caracterização do sistema, quality gates e relatórios
@@ -146,11 +164,12 @@ docs/              caracterização do sistema, quality gates e relatórios
 O repositório não contém senhas, tokens, chaves ou dados pessoais. Arquivos `.env` e chaves
 estão no `.gitignore`, e o Gate 6 (`gitleaks`) reprova qualquer commit com senha, token ou chave.
 Se o pipeline precisar de algum segredo, ele deve ser cadastrado nos
-*Secrets* da plataforma de CI, nunca no código.
+*Secrets* da plataforma de CI, nunca no código. A `SENTRY_DSN` segue a mesma regra: fica no
+ambiente ou nos *Secrets*, e o [.env.example](.env.example) mostra a variável sem valor.
 
 ## Integrantes
 
 | Integrante        | Responsável por                                                       |
 |-------------------|-----------------------------------------------------------------------|
 | Pietro Bolzan        | Base do repositório, domínio, serviço, API, testes, pipeline (Gates 1 e 2) |
-| Eduardo dos Santos Lourenço | Análise estática, cobertura, dependências, Quality Gate, experimentos, relatório |
+| Eduardo dos Santos Lourenço | Análise estática, cobertura, dependências, Quality Gate, experimentos, relatório, monitoramento de erros (Sentry) |

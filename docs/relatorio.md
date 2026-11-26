@@ -279,8 +279,12 @@ nenhum integrante, nem quem configurou o pipeline, consegue contornar o gate.
 manual (*environments* do GitHub) antes de produção. (3) Credenciais da nuvem via OIDC ou *Secrets*,
 nunca no repositório. (4) *Smoke test* pós-deploy chamando `/health` e um fluxo crítico, com
 *rollback* automático se falhar: o `scripts/smoke-test.sh` do Gate 7 já faz isso e só precisaria
-receber a URL do ambiente publicado. (5) Observabilidade: os logs já são JSON estruturado (`slog`);
-faltam métricas (latência, taxa de erro por rota, ex.: Prometheus), alertas e rastreamento.
+receber a URL do ambiente publicado. (5) Observabilidade: os logs já são JSON estruturado (`slog`) e os
+erros em execução já vão para o **Sentry** (Parte 13, ver [monitoramento.md](monitoramento.md)): todo
+erro 500 ou *panic* chega ao painel com rota, pilha e versão, sem depender de alguém ler o log. O
+Sentry foi preferido ao Grafana porque é gratuito, não exige servidor próprio e mostra *qual* erro
+aconteceu, não só *quantos*. Faltam métricas (latência, taxa de erro por rota, ex.: Prometheus e
+Grafana, adiados para quando houver *deploy*), alertas e rastreamento.
 (6) Persistência real com testes de integração usando banco em contêiner.
 
 ## 9. Contribuições
@@ -288,7 +292,7 @@ faltam métricas (latência, taxa de erro por rota, ex.: Prometheus), alertas e 
 | Integrante | Partes | Contribuição |
 |------------|--------|--------------|
 | Pietro Bolzan | 1 a 5 | Estrutura do repositório e caracterização do sistema; domínio e regras de negócio; repositório e serviço; API HTTP; testes unitários e de API; pipeline base com os Gates 1 e 2. |
-| Eduardo dos Santos Lourenço | 6 a 12 | Gate de análise estática (incluindo a correção dos achados); gate de cobertura (incluindo a correção do script para o gawk); gate de dependências e decisão consolidada; proteção da branch; execução e registro dos experimentos; relatório e roteiro da demonstração; gates de segredos e de teste de fumaça; interface web Esteira e gate do frontend. |
+| Eduardo dos Santos Lourenço | 6 a 13 | Gate de análise estática (incluindo a correção dos achados); gate de cobertura (incluindo a correção do script para o gawk); gate de dependências e decisão consolidada; proteção da branch; execução e registro dos experimentos; relatório e roteiro da demonstração; gates de segredos e de teste de fumaça; interface web Esteira e gate do frontend; monitoramento de erros com Sentry. |
 
 Os dois integrantes revisaram os PRs um do outro, e o histórico de commits do repositório registra
 a autoria de cada parte. Cada parte entrou por um pull request, integrado com *merge commit*, e as
@@ -302,6 +306,7 @@ branches foram mantidas para que o progresso possa ser acompanhado.
 - The Go Authors. *Testing package* e *Data Race Detector*. https://pkg.go.dev/testing ; https://go.dev/doc/articles/race_detector
 - The Go Authors. *Vulnerability Management for Go (govulncheck)*. https://go.dev/doc/security/vuln/
 - golangci-lint. *Documentation*. https://golangci-lint.run/
+- Sentry. *Envelopes* e *Event Payloads* (Developer Documentation). https://develop.sentry.dev/sdk/data-model/envelopes/
 - OWASP. *OWASP Top 10: Vulnerable and Outdated Components*. https://owasp.org/
 - ISTQB. *Certified Tester Foundation Level (CTFL) v4.0*. https://istqb.org/certifications/certified-tester-foundation-level-ctfl-v4-0/
 - Software Testing Material. *QAOps: processo, implementação e benefícios*. https://www.softwaretestingmaterial.com/qaops/
