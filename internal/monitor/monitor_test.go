@@ -153,6 +153,9 @@ func TestNewSemDSNDesligaMonitoramento(t *testing.T) {
 	if err := rep.Close(context.Background()); err != nil {
 		t.Errorf("Close em Reporter nil = %v", err)
 	}
+	if rep.Failures() != 0 {
+		t.Errorf("Failures em Reporter nil = %d", rep.Failures())
+	}
 }
 
 func TestNewRejeitaDSNInvalida(t *testing.T) {
@@ -223,6 +226,12 @@ func TestCaptureMessageEFalhaDoSentryNaoDerrubamAAPI(t *testing.T) {
 	if ev.Request != nil {
 		t.Error("evento sem requisição não deveria ter o campo request")
 	}
+	if err := rep.Close(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if rep.Failures() != 1 {
+		t.Errorf("Failures = %d, quer 1 (Sentry respondeu 429)", rep.Failures())
+	}
 }
 
 func TestEnvioComSentryForaDoArNaoTrava(t *testing.T) {
@@ -240,6 +249,9 @@ func TestEnvioComSentryForaDoArNaoTrava(t *testing.T) {
 	defer cancel()
 	if err := rep.Close(ctx); err != nil {
 		t.Fatalf("Close deveria terminar mesmo com o Sentry fora do ar: %v", err)
+	}
+	if rep.Failures() != 1 {
+		t.Errorf("Failures = %d, quer 1 (envio sem ninguém escutando)", rep.Failures())
 	}
 	rep.CaptureMessage("depois do Close é descartado")
 	if err := rep.Close(ctx); err != nil {

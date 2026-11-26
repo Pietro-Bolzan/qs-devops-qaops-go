@@ -8,7 +8,7 @@
 | Sistema      | API de Tarefas (API REST em Go) e interface web Esteira |
 | Repositório  | https://github.com/Pietro-Bolzan/qs-devops-qaops-go   |
 | Plataforma   | GitHub Actions (`ubuntu-latest`, Go 1.27)             |
-| Data         | 29/10/2026                                            |
+| Data         | 26/11/2026                                            |
 
 ## 2. Contexto
 
@@ -22,10 +22,9 @@ rápido (o que encurta o ciclo de feedback do pipeline) e gera um binário únic
 externas reduz a superfície de ataque e a manutenção de dependências. As consequências disso para o
 Gate 5 estão discutidas na seção 8.
 
-A interface web **Esteira** (`web/`) usa React 19, Vite 8, TypeScript e Motion (animações). Ela
-mostra as tarefas como um quadro de três estações (A fazer → Em andamento → Concluída), tem modo
-claro e escuro, funciona no celular e respeita a preferência "reduzir movimento". Fala com a API só
-pelo contrato HTTP: as regras continuam na API, e a interface apenas esconde as ações inválidas.
+A interface web **Esteira** (`web/`, React 19, Vite 8 e TypeScript) mostra as tarefas como um
+quadro de três estações (A fazer → Em andamento → Concluída). Ela fala com a API só pelo contrato
+HTTP: as regras continuam na API, e a interface apenas esconde as ações inválidas.
 
 **Arquitetura.** Três camadas, cada uma dependendo só da de baixo:
 
@@ -35,6 +34,7 @@ cmd/server        → monta as dependências, sobe o servidor HTTP e faz desliga
 internal/httpapi  → rotas, validação do JSON, tradução de erros de domínio em status HTTP
 internal/task     → entidade Tarefa, regras de validação, ciclo de status,
                     serviço (casos de uso) e repositório em memória
+internal/monitor  → envio de erros 500 e panics ao Sentry (desligado sem SENTRY_DSN)
 ```
 
 O domínio não conhece HTTP e recebe o relógio por injeção (`Clock`). Por isso as regras podem ser
@@ -69,10 +69,8 @@ existe para controlar ao menos um deles.
 | R10 | O binário entregue não sobe ou não atende pela rede       | Teste de fumaça do binário      | 7    |
 | R11 | Interface quebra o fluxo, fica inacessível ou usa pacote npm vulnerável | Testes de componente, axe-core, lint e `npm audit` | 8 |
 
-Na primeira versão do pipeline (Gates 1 a 5), o R9 era o único risco sem verificação automática.
-A análise crítica (seção 8) apontou essa lacuna, e o **Gate 6** foi criado para fechá-la. O R10
-surgiu na mesma revisão: os testes de API usam `httptest` e nunca executam o binário de verdade,
-então um erro na montagem do servidor passaria por todos os gates.
+R9 e R10 não existiam na primeira versão do pipeline (Gates 1 a 5): surgiram da análise crítica
+(seção 8) e deram origem aos Gates 6 e 7.
 
 ## 4. Pipeline
 
@@ -112,12 +110,10 @@ push / PR ─► Gate 1 · Build ─┬─► Gate 2 · Testes ──► Gate 4 
 - **Um único check obrigatório.** O job `Quality Gate` roda sempre (`if: always()`) e só aprova se
   todos os gates foram aprovados. A proteção da branch `main` exige apenas esse check, então
   adicionar um gate novo não exige mudar a configuração do GitHub.
-- **Versões fixadas.** Go (via `go.mod`), `gotestsum`, `golangci-lint` e `govulncheck` têm versão
-  fixa. Isso torna o pipeline reproduzível: um gate não muda de comportamento sozinho porque uma
-  ferramenta foi atualizada.
-- **Privilégio mínimo.** `permissions: contents: read`. O pipeline não usa nenhum segredo.
-- **Reprodução local.** `make ci` executa os mesmos gates na máquina do desenvolvedor, para que a
-  falha seja descoberta antes do push.
+- **Versões fixadas** (Go, `gotestsum`, `golangci-lint`, `govulncheck`): um gate não muda de
+  comportamento sozinho porque uma ferramenta foi atualizada.
+- **Privilégio mínimo** (`permissions: contents: read`) e **reprodução local** (`make ci` executa
+  os mesmos gates antes do push).
 
 ## 5. Testes
 
@@ -132,11 +128,12 @@ combinações de transição de status).
 | Unitário (domínio)  | `internal/task/task_test.go`              | 8 / 32*         | RN01 a RN07, valores-limite, todas as transições |
 | Unitário (repositório) | `internal/task/store_test.go`          | 6               | IDs sequenciais, não encontrado, ordenação, isolamento de cópias, criação concorrente |
 | Unitário (serviço) | `internal/task/service_test.go`            | 11              | Casos de uso, filtro, propagação de erro do repositório, transição concorrente |
-| API / integração | `internal/httpapi/handler_test.go`           | 13 / 23         | Contrato HTTP de todos os endpoints (status, cabeçalhos, JSON), ciclo de vida completo, erro interno sem vazar detalhes |
-| **Total**        |                                              | **38 / 72**     | |
+| API / integração | `internal/httpapi/handler_test.go`           | 14 / 24         | Contrato HTTP de todos os endpoints (status, cabeçalhos, JSON), ciclo de vida completo, erro interno sem vazar detalhes e enviado ao monitoramento |
+| Unitário (monitoramento) | `internal/monitor/monitor_test.go`   | 11 / 17         | Envelope do Sentry (com um Sentry falso), DSN inválida, Sentry fora do ar, fila cheia, *panic* recuperado |
+| **Total**        |                                              | **50 / 90**     | |
 
-\* Casos contando os subtestes de tabela. O total de 72 casos é o que aparece no resumo do Gate 2 em
-todas as execuções do pipeline.
+\* Casos contando os subtestes de tabela, como no resumo do Gate 2. Até a Parte 12 eram 72 casos
+(número citado nos experimentos); o monitoramento (Parte 13) elevou o total para 90.
 
 **Destaques:**
 
@@ -150,11 +147,10 @@ todas as execuções do pipeline.
 - **Falha de infraestrutura simulada.** Um repositório falso que sempre falha confirma que o serviço
   propaga o erro e que a API responde `500` sem expor a mensagem interna.
 
-**Interface web.** A Esteira tem 26 casos em `web/src`: testes de componente com Testing Library e
-uma API falsa que imita a RN01, a RN06 e a RN07 (criar, mover entre estações, conflito 409, API fora
-do ar, tema, atalho de teclado), testes do cliente HTTP, da formatação de prazos (valores-limite:
-ontem, hoje, amanhã, 3 dias) e **testes de acessibilidade com axe-core**, que reprovam se houver
-qualquer violação WCAG 2.1 A/AA. A cobertura de `web/src` fica em torno de 96%.
+**Interface web.** A Esteira tem 26 casos em `web/src`: testes de componente com uma API falsa que
+imita a RN01, a RN06 e a RN07, testes do cliente HTTP e da formatação de prazos (valores-limite) e
+**testes de acessibilidade com axe-core**, que reprovam qualquer violação WCAG 2.1 A/AA. A
+cobertura de `web/src` fica em torno de 96%.
 
 **Categorias não aplicáveis.** Não há testes de banco de dados (a persistência é em memória) nem
 testes de ponta a ponta da interface com a API real. Testes de carga e de desempenho ficaram fora do
@@ -185,19 +181,14 @@ As fichas completas estão em `docs/quality-gates.md`. Resumo:
 - **Zero problemas no Gate 3.** O projeto começou limpo. Aceitar "até N problemas" faria a dívida
   técnica crescer sem ninguém perceber.
 
-**Achado ao ativar o Gate 3.** A primeira execução do `golangci-lint` apontou 35 ocorrências do
-`bodyclose` nos testes de API e 1 do `misspell`. A primeira era um problema real de clareza: o
-helper de teste fechava o corpo da resposta, mas devolvia o `*http.Response`, o que tornava a
-garantia invisível. Ele foi refatorado. A segunda era um falso positivo: o `misspell` só conhece
-inglês e acusou "Comando" nos comentários em português. Esse linter foi removido, com a
-justificativa registrada na configuração. Isso mostra que a configuração de um gate também precisa
-de avaliação crítica, não só de cópia.
+**Achado ao ativar o Gate 3.** A primeira execução do `golangci-lint` apontou 35 `bodyclose` nos
+testes de API (problema real de clareza no helper de teste, que foi refatorado) e 1 `misspell`, um
+falso positivo: o linter só conhece inglês e acusou "Comando". Ele foi removido, com a justificativa
+registrada na configuração: a configuração de um gate também precisa de avaliação crítica.
 
-**Achados do Gate 8.** Durante o desenvolvimento da interface, o `oxlint` pegou 4 problemas reais
-(`set-state-in-effect` e três `prefer-tag-over-role`, corrigidos com `<output>`, `<fieldset>` e
-`<progress>`). O axe-core, rodando no navegador, pegou um contraste de **3,83:1** numa dica do
-formulário no modo escuro (o mínimo é 4,5:1). Esse último o pipeline **não** pegaria, porque o
-jsdom não calcula estilos: é um exemplo concreto de limitação de um gate.
+**Achados do Gate 8.** O `oxlint` pegou 4 problemas reais na interface. Já um contraste de
+**3,83:1** no modo escuro (mínimo 4,5:1) só foi pego rodando o axe-core no navegador: o pipeline
+**não** o pegaria, porque o jsdom não calcula estilos, um exemplo concreto de limitação de um gate.
 
 ## 7. Experimentos
 
@@ -218,9 +209,8 @@ camadas: domínio (`TestCanTransition`, `TestTransitionTo_Rejected`), serviço
 (`TestService_ChangeStatus`) e API (`TestTaskLifecycle`, que esperava `409` e recebeu `200`). O log
 mostrou o nome de cada teste e o valor esperado contra o obtido, então a causa pôde ser identificada
 sem rodar nada localmente. A reprovação foi a execução **mais rápida** (1min09s), porque o Gate 4
-nem rodou e o Quality Gate decidiu assim que o Gate 2 falhou. Entre o fim da execução reprovada
-(13:16 UTC) e a nova aprovação (13:28 UTC) passaram cerca de 12 minutos, a maior parte para ler o
-log e registrar as evidências. A correção em si (revert, push e pipeline) levou menos de 2 minutos.
+nem rodou. Da reprovação à nova aprovação passaram cerca de 12 minutos, a maior parte lendo o log e
+registrando evidências; a correção em si (revert, push e pipeline) levou menos de 2 minutos.
 
 No experimento complementar (PR #10, não integrado), ignorar o erro de `Encode` **não** fez nenhum
 dos 72 testes falhar, mas reprovou o Gate 3 (`errcheck`), com a anotação na linha 225 do
@@ -258,13 +248,10 @@ ferramentas fixadas precisam de atualização periódica (Go, linters, *actions*
 os pacotes npm), e cada atualização pode trazer regras novas. O limite de cobertura pode incentivar testes vazios se não houver revisão.
 Em troca, a regressão do experimento, que seria um defeito em produção, custou alguns minutos de CI.
 
-Um caso real mostrou esse custo. Em 19/10/2026 o rótulo `ubuntu-latest` do GitHub passou a apontar
-para o Ubuntu 26, em que o `awk` é o **gawk**. No primeiro PR do gate de cobertura, o script
-reprovou sem nenhuma mudança no código: `awk: fatal: cannot use gawk builtin 'include' as variable
-name`, porque `include` é palavra reservada no gawk e o script usava uma variável com esse nome. A
-correção foi renomear duas variáveis (testadas com gawk e mawk). A lição: fixar a versão das
-ferramentas não basta se o **ambiente de execução** não estiver fixado também (`ubuntu-24.04` em
-vez de `ubuntu-latest`), e scripts de gate precisam ser portáveis.
+Um caso real mostrou esse custo: quando o `ubuntu-latest` passou para o Ubuntu 26 (19/10/2026), o
+`awk` virou **gawk** e o script de cobertura reprovou sem mudança no código, porque usava uma
+variável chamada `include`, palavra reservada no gawk. A lição: fixar a versão das ferramentas não
+basta se o **ambiente de execução** não estiver fixado também (`ubuntu-24.04`).
 
 **O que diferencia automação isolada de uma prática DevOps/QAOps?** Ter scripts de teste é
 automação. Vira prática QAOps quando: (a) as verificações rodam **sempre**, no fluxo, sem depender
@@ -279,12 +266,10 @@ nenhum integrante, nem quem configurou o pipeline, consegue contornar o gate.
 manual (*environments* do GitHub) antes de produção. (3) Credenciais da nuvem via OIDC ou *Secrets*,
 nunca no repositório. (4) *Smoke test* pós-deploy chamando `/health` e um fluxo crítico, com
 *rollback* automático se falhar: o `scripts/smoke-test.sh` do Gate 7 já faz isso e só precisaria
-receber a URL do ambiente publicado. (5) Observabilidade: os logs já são JSON estruturado (`slog`) e os
-erros em execução já vão para o **Sentry** (Parte 13, ver [monitoramento.md](monitoramento.md)): todo
-erro 500 ou *panic* chega ao painel com rota, pilha e versão, sem depender de alguém ler o log. O
-Sentry foi preferido ao Grafana porque é gratuito, não exige servidor próprio e mostra *qual* erro
-aconteceu, não só *quantos*. Faltam métricas (latência, taxa de erro por rota, ex.: Prometheus e
-Grafana, adiados para quando houver *deploy*), alertas e rastreamento.
+receber a URL do ambiente publicado. (5) Observabilidade: além dos logs em JSON (`slog`), erros 500 e *panics*
+já vão para o **Sentry** (Parte 13, `docs/monitoramento.md`) com rota, pilha e versão. Ele foi
+preferido ao Grafana por ser gratuito, não exigir servidor próprio e mostrar *qual* erro ocorreu, não
+só *quantos*. Faltam métricas de latência (Prometheus e Grafana, adiados para o *deploy*) e alertas.
 (6) Persistência real com testes de integração usando banco em contêiner.
 
 ## 9. Contribuições
