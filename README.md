@@ -13,6 +13,7 @@ O sistema é simples de propósito: o foco do trabalho é a **qualidade integrad
 | [docs/sistema.md](docs/sistema.md)               | Finalidade, arquitetura, regras de negócio e riscos   |
 | [docs/quality-gates.md](docs/quality-gates.md)   | Ficha de cada quality gate e proteção da branch       |
 | [docs/experimentos.md](docs/experimentos.md)     | Cenários aprovado, reprovado e corrigido              |
+| [docs/experimento-8-gates.md](docs/experimento-8-gates.md) | Reexecução dos cenários com os 8 gates (PR #16) |
 | [docs/monitoramento.md](docs/monitoramento.md)   | Monitoramento de erros em execução com o Sentry       |
 | [docs/relatorio.md](docs/relatorio.md)           | Relatório técnico                                     |
 | [docs/roteiro-demo.md](docs/roteiro-demo.md)     | Roteiro da demonstração                               |
