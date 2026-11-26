@@ -167,6 +167,12 @@ Se o pipeline precisar de algum segredo, ele deve ser cadastrado nos
 *Secrets* da plataforma de CI, nunca no código. A `SENTRY_DSN` segue a mesma regra: fica no
 ambiente ou nos *Secrets*, e o [.env.example](.env.example) mostra a variável sem valor.
 
+## Kanban
+
+O andamento das etapas fica no [Kanban do GitHub Projects](https://github.com/users/edulsantos/projects/1),
+com as colunas **Aprovado**, **Stand by**, **Em andamento**, **Controle de qualidade** (PR aberto,
+pipeline rodando os gates e revisão do colega) e **Concluído** (PR integrado na `main`).
+
 ## Integrantes
 
 | Integrante        | Responsável por                                                       |
