@@ -25,6 +25,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -62,6 +63,7 @@ type Reporter struct {
 	closed bool
 	queue  chan []byte
 	done   chan struct{}
+	failed atomic.Int64 // envios recusados ou que não chegaram ao Sentry
 }
 
 // New valida a DSN e inicia o envio em segundo plano. Com DSN vazia,
@@ -135,6 +137,14 @@ func parseDSN(dsn string) (endpoint, key string, err error) {
 
 // Enabled informa se os eventos estão sendo enviados ao Sentry.
 func (r *Reporter) Enabled() bool { return r != nil }
+
+// Failures devolve quantos envios ao Sentry falharam (rede ou recusa).
+func (r *Reporter) Failures() int64 {
+	if r == nil {
+		return 0
+	}
+	return r.failed.Load()
+}
 
 // CaptureError registra um erro inesperado (status 5xx) com os dados da
 // requisição que o causou. req pode ser nil.
@@ -226,6 +236,7 @@ func (r *Reporter) worker() {
 	defer close(r.done)
 	for body := range r.queue {
 		if err := r.send(body); err != nil {
+			r.failed.Add(1)
 			r.log.Warn("monitor: falha ao enviar evento ao Sentry", "erro", err)
 		}
 	}

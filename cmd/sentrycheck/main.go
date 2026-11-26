@@ -37,6 +37,10 @@ func main() {
 		fmt.Fprintln(os.Stderr, "erro: o evento não foi enviado a tempo:", err)
 		os.Exit(1)
 	}
+	if rep.Failures() > 0 {
+		fmt.Fprintln(os.Stderr, "erro: o Sentry não recebeu o evento (veja o aviso acima). Confira a SENTRY_DSN e a conexão.")
+		os.Exit(1)
+	}
 	fmt.Println("Evento enviado. Confira em Issues no painel do Sentry.")
 }
 
