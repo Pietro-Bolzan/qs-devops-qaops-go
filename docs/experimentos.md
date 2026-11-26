@@ -4,6 +4,9 @@ Objetivo: mostrar que o pipeline **detecta uma alteração inadequada e impede q
 a falha aparece **na etapa certa** e que, depois da correção, o fluxo volta a ser aprovado,
 **com o histórico preservado**.
 
+> Este documento registra a rodada original (PR #9), feita com os Gates 1 a 5. A reexecução dos
+> mesmos cenários com os 8 gates está em [experimento-8-gates.md](experimento-8-gates.md) (PR #16).
+
 > Pré-requisito: a proteção da branch `main` com o check obrigatório `Quality Gate` (ver
 > [quality-gates.md](quality-gates.md#proteção-da-branch-main)). Sem ela o pipeline fica vermelho,
 > mas o botão de merge continua liberado.
