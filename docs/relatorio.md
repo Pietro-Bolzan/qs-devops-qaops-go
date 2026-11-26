@@ -192,30 +192,28 @@ registrada na configuração: a configuração de um gate também precisa de ava
 
 ## 7. Experimentos
 
-Detalhes e evidências em `docs/experimentos.md`. Os três cenários foram executados **no mesmo pull
-request**, em commits consecutivos, quando o pipeline ainda tinha os Gates 1 a 5 (os Gates 6 e 7
-vieram depois, a partir da análise crítica):
+Os três cenários rodaram **no mesmo PR**, em commits consecutivos: primeiro com os Gates 1 a 5
+(PR #9, `docs/experimentos.md`) e depois, com o pipeline completo, com os **8 gates** (PR #16,
+`docs/experimento-8-gates.md`):
 
-| Cenário   | Alteração                                       | Resultado                                          | Execução |
+| Cenário   | Alteração                                       | Resultado com 8 gates (PR #16)                     | Execução |
 |-----------|-------------------------------------------------|----------------------------------------------------|----------|
-| Aprovado  | Documentação do experimento (`ac131ef`)          | 5 gates ✅, Quality Gate ✅                         | [1min51s](https://github.com/Pietro-Bolzan/qs-devops-qaops-go/actions/runs/40879768649) |
-| Reprovado | `done` passa a poder voltar para `todo`, violando a RN07 (`7fc8c36`) | Gates 1, 3, 5 ✅; **Gate 2 ❌ (72 testes, 5 falhas em 4 funções)**; Gate 4 não executou; **merge bloqueado** | [1min09s](https://github.com/Pietro-Bolzan/qs-devops-qaops-go/actions/runs/40880227916) |
-| Correção  | `git revert` do commit defeituoso (`dd1394a`)    | 5 gates ✅, Quality Gate ✅                         | [1min37s](https://github.com/Pietro-Bolzan/qs-devops-qaops-go/actions/runs/40882005466) |
+| Aprovado  | Roteiro do experimento, sem código (`f7d3b2d`)  | 8 gates ✅, Quality Gate ✅                         | [1min19s](https://github.com/Pietro-Bolzan/qs-devops-qaops-go/actions/runs/45881094543) |
+| Reprovado | `done` passa a poder voltar para `todo`, violando a RN07 (`5b942aa`) | **Gate 2 ❌ (90 testes, 5 falhas)** e **Gate 7 ❌ (RN07: esperado 409, obtido 200)**; Gate 4 não executou; demais ✅; **merge bloqueado** | [1min19s](https://github.com/Pietro-Bolzan/qs-devops-qaops-go/actions/runs/45881377618) |
+| Correção  | `git revert` do commit defeituoso (`f651af3`)    | 8 gates ✅, Quality Gate ✅                         | [1min20s](https://github.com/Pietro-Bolzan/qs-devops-qaops-go/actions/runs/45881774448) |
 
-**Análise.** A alteração defeituosa tinha uma única linha, compilava e passava no lint, ou seja,
-seria fácil aprová-la numa revisão apressada. O pipeline bloqueou o merge **na etapa correta** (o
-problema era de comportamento, então reprovou o gate de testes) e a regressão foi detectada em três
-camadas: domínio (`TestCanTransition`, `TestTransitionTo_Rejected`), serviço
-(`TestService_ChangeStatus`) e API (`TestTaskLifecycle`, que esperava `409` e recebeu `200`). O log
-mostrou o nome de cada teste e o valor esperado contra o obtido, então a causa pôde ser identificada
-sem rodar nada localmente. A reprovação foi a execução **mais rápida** (1min09s), porque o Gate 4
-nem rodou. Da reprovação à nova aprovação passaram cerca de 12 minutos, a maior parte lendo o log e
-registrando evidências; a correção em si (revert, push e pipeline) levou menos de 2 minutos.
+Na rodada original (PR #9, 5 gates), o resultado foi o mesmo: aprovado em 1min51s, reprovado só no
+Gate 2 em 1min09s (72 testes, 5 falhas) e corrigido em 1min37s.
 
-No experimento complementar (PR #10, não integrado), ignorar o erro de `Encode` **não** fez nenhum
-dos 72 testes falhar, mas reprovou o Gate 3 (`errcheck`), com a anotação na linha 225 do
-`handler.go`, dentro do PR. Isso mostra que os gates são complementares: no experimento principal só
-os testes pegaram o problema; neste, só a análise estática.
+**Análise.** A alteração tinha uma linha, compilava e passava no lint: seria fácil aprová-la numa
+revisão apressada. O merge foi bloqueado **na etapa correta**, pelos gates que verificam
+comportamento. No Gate 2 a regressão apareceu em três camadas: domínio (`TestCanTransition`),
+serviço (`TestService_ChangeStatus`) e API (`TestTaskLifecycle`, esperava `409` e recebeu `200`). Com
+os 8 gates, o **Gate 7** pegou o mesmo defeito de forma independente, no binário real. Os logs
+mostraram esperado × obtido, e a causa foi achada sem rodar nada localmente.
+
+No experimento complementar (PR #10, não integrado), ignorar o erro de `Encode` não fez nenhum teste
+falhar, mas reprovou o Gate 3 (`errcheck`), com anotação na linha do PR: os gates são complementares.
 
 ## 8. Análise crítica
 
@@ -232,7 +230,7 @@ não exercita banco, migrações nem transações; e **falhas de lógica não es
 testes verificam as regras que a dupla escreveu, não as que esqueceu.
 
 **O pipeline fornece feedback rápido e compreensível?** Sim. As execuções do experimento levaram de
-**1min09s a 1min51s** do push à decisão, e o job mais lento é o de testes (cerca de 45 s, por causa
+**1min09s a 1min51s** do push à decisão com 5 gates, e cerca de **1min20s** com os 8 gates, e o job mais lento é o de testes (cerca de 45 s, por causa
 do `-race`). A velocidade vem dos gates em paralelo, do cache do Go e de testes que não
 dependem de rede nem de banco. A clareza vem da tabela de decisão no resumo, das anotações do lint
 na linha exata do PR e dos nomes de teste descritivos em português. Um ponto fraco é que o
@@ -242,8 +240,8 @@ na linha exata do PR e dos nomes de teste descritivos em português. Um ponto fr
 especificadas, segredos), escolha e manutenção dos limites dos gates, avaliação de vulnerabilidades
 sem correção disponível e o teste exploratório da API na demonstração.
 
-**Qual é o custo de manter os testes e os gates?** São cerca de 900 linhas de teste para cerca de
-720 de código de produção (contando comentários). Toda mudança de regra exige atualizar testes em até três camadas. As
+**Qual é o custo de manter os testes e os gates?** São cerca de 1.300 linhas de teste para cerca
+de 1.200 de código de produção (contando comentários). Toda mudança de regra exige atualizar testes em até três camadas. As
 ferramentas fixadas precisam de atualização periódica (Go, linters, *actions* e, desde a interface,
 os pacotes npm), e cada atualização pode trazer regras novas. O limite de cobertura pode incentivar testes vazios se não houver revisão.
 Em troca, a regressão do experimento, que seria um defeito em produção, custou alguns minutos de CI.
@@ -277,7 +275,7 @@ só *quantos*. Faltam métricas de latência (Prometheus e Grafana, adiados para
 | Integrante | Partes | Contribuição |
 |------------|--------|--------------|
 | Pietro Bolzan | 1 a 5 | Estrutura do repositório e caracterização do sistema; domínio e regras de negócio; repositório e serviço; API HTTP; testes unitários e de API; pipeline base com os Gates 1 e 2. |
-| Eduardo dos Santos Lourenço | 6 a 13 | Gate de análise estática (incluindo a correção dos achados); gate de cobertura (incluindo a correção do script para o gawk); gate de dependências e decisão consolidada; proteção da branch; execução e registro dos experimentos; relatório e roteiro da demonstração; gates de segredos e de teste de fumaça; interface web Esteira e gate do frontend; monitoramento de erros com Sentry. |
+| Eduardo dos Santos Lourenço | 6 a 16 | Gate de análise estática (incluindo a correção dos achados); gate de cobertura (incluindo a correção do script para o gawk); gate de dependências e decisão consolidada; proteção da branch; execução e registro dos experimentos (incluindo a reexecução com os 8 gates); relatório e roteiro da demonstração; gates de segredos e de teste de fumaça; interface web Esteira e gate do frontend; monitoramento de erros com Sentry. |
 
 Os dois integrantes revisaram os PRs um do outro, e o histórico de commits do repositório registra
 a autoria de cada parte. Cada parte entrou por um pull request, integrado com *merge commit*, e as
