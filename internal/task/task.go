@@ -61,7 +61,7 @@ func (e *ValidationError) Error() string {
 var allowedTransitions = map[Status][]Status{
 	StatusTodo:       {StatusInProgress},
 	StatusInProgress: {StatusTodo, StatusDone},
-	StatusDone:       {},
+	StatusDone:       {StatusTodo}, // permite reabrir tarefa concluída
 }
 
 // Valid informa se o status é um dos valores conhecidos.
